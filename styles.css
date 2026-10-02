@@ -612,3 +612,26 @@ dialog::backdrop{background:var(--backdrop)}
   .project-switcher{position:static}
   .project-heading .project-icon{width:82px;height:82px;border-radius:20px}
 }
+
+/* Keep project names and status badges from competing for the same space. */
+.grid{grid-template-columns:repeat(auto-fit,minmax(min(360px,100%),1fr))}
+.game-top{align-items:center;flex-wrap:wrap}
+.game-card-title{display:flex;align-items:center;gap:.65rem;flex:1 1 220px;min-width:0}
+.game-card-title h3{min-width:0;overflow-wrap:anywhere}
+.game-top>.badge{flex:none;margin-left:auto;white-space:nowrap}
+
+/* Project switcher sidebar search and section divider */
+.project-switcher{display:grid;gap:.95rem}
+.project-search-wrap{display:flex;align-items:center;gap:.55rem;min-height:42px;padding:0 .7rem;border:1px solid var(--line);border-radius:11px;background:var(--bg)}
+.project-search-wrap:focus-within{border-color:var(--ember);box-shadow:0 0 0 3px color-mix(in srgb,var(--ember) 16%,transparent)}
+.project-search-icon{color:var(--muted);font-size:1.35rem;line-height:1}
+.project-search-wrap input{width:100%;min-width:0;padding:.6rem 0;border:0;outline:0;background:transparent;color:var(--ink);font:500 .85rem var(--font-body)}
+.project-selected-section{display:grid;gap:.45rem}
+.project-switch-divider{display:flex;align-items:center;gap:.6rem;color:var(--muted);font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+.project-switch-divider::before,.project-switch-divider::after{content:"";height:1px;flex:1;background:var(--line)}
+.project-switch-list{display:grid;gap:.55rem}
+.project-no-results{margin:0;color:var(--muted);font-size:.82rem}
+
+/* Hide scrollbar chrome while keeping normal wheel, touch, and keyboard scrolling. */
+html,body{scrollbar-width:none;-ms-overflow-style:none}
+html::-webkit-scrollbar,body::-webkit-scrollbar{display:none;width:0;height:0}
