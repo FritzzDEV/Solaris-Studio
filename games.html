@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#fff1d6">
+  <title>Solaris Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body data-page="games">
+  <header class="top"><div class="top-in">
+    <a class="brand" href="index.html" aria-label="Solaris Studio home">
+      <svg viewBox="0 0 40 40" aria-hidden="true"><defs><radialGradient id="logoSun" cx=".5" cy=".45" r=".6"><stop offset="0" stop-color="#FFF6C2"/><stop offset=".5" stop-color="#FFC23D"/><stop offset="1" stop-color="#FF5A1F"/></radialGradient></defs><g stroke="#FF7A1A" stroke-width="2.4" stroke-linecap="round"><path d="M20 2v5M20 33v5M2 20h5M33 20h5M7.3 7.3l3.5 3.5M29.2 29.2l3.5 3.5M7.3 32.7l3.5-3.5M29.2 10.8l3.5-3.5"/></g><circle cx="20" cy="20" r="9" fill="url(#logoSun)"/></svg>
+      Solaris Studio
+    </a>
+    <button class="icon-btn menu-btn" data-menu aria-expanded="false" aria-controls="nav">Menu</button>
+    <nav class="nav" id="nav" aria-label="Main"><ul id="nav-list"></ul></nav>
+    <button class="icon-btn" data-theme-toggle aria-label="Switch between light and dark theme">Theme</button>
+    <div class="profile-wrap"><button class="profile-button" id="profile-button" aria-expanded="false" aria-controls="profile-popover"></button><section class="profile-popover" id="profile-popover" aria-label="Account preview" hidden></section></div>
+  </div></header>
+  <main id="app" tabindex="-1"></main>
+  <footer class="foot"><div class="foot-in"><span>&copy; 2026 Solaris Studio.</span><span>Building worlds, one project at a time.</span></div></footer>
+  <dialog id="dlg" aria-label="Project details"><button class="dlg-x" data-close aria-label="Close">&times;</button><div class="dlg-body" id="dlg-body"></div></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
