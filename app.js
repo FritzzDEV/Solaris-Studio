@@ -1,7 +1,7 @@
 (() => {
   const DATA = {
     games: [
-      { id: 'gamma-frost', name: 'Gamma Frost', subtitle: 'Hollow Shift', genre: 'MMORPG', status: 'In Development', version: 'v0.0.2', cover: 'frost',
+      { id: 'gamma-frost', name: 'Gamma Frost', subtitle: 'Hollow Shift', genre: 'MMORPG', status: 'In Development', version: 'v0.0.2', cover: 'frost', icon: 'assets/hollow-shift-icon.webp',
         blurb: 'Tame animals, explore a living world, adventure, and experiment in an MMORPG shaped by the time of day where you play.',
         details: 'Gamma Frost is Solaris Studio’s current work in progress. Its world follows realistic local time: daytime where you are brings day to the game, and nighttime brings night. Hollow Shift is its secondary title.' },
       { id: 'omowo-collide', name: 'OmiWo: Collide', subtitle: 'Ominous World', genre: 'Open-world gacha', status: 'Future project', version: '', cover: 'collide',
@@ -20,7 +20,7 @@
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   const app = $('#app');
   const page = document.body.dataset.page || 'home';
-  const titles = {home:'',list:'List',games:'Games',updates:'Updates',account:'Profile',arts:'Arts',groups:'Groups',download:'Download'};
+  const titles = {home:'',list:'List',games:'Games',updates:'Updates',account:'Profile',arts:'Arts',groups:'Groups',download:'Download',project:'Project'};
   let currentUser = null;
   let editingProfile = false;
   let cropSession = null;
@@ -34,6 +34,7 @@
   const noteControl = (note, extra = '') => note ? `<div class="note-control ${extra}"><button class="note-ellipsis" type="button" data-note-toggle aria-expanded="false" aria-label="Show profile note">...</button><div class="note-bubble" hidden>${esc(note)}</div></div>` : '';
   const gameById = id => DATA.games.find(game => game.id === id);
   const gameByName = name => DATA.games.find(game => game.name === name);
+  const projectIcon = (game, extra = '') => `<span class="project-icon project-icon-${esc(game.cover)} ${extra}" aria-hidden="true">${game.icon ? `<img src="${esc(game.icon)}" alt="">` : esc(game.name === 'Gamma Frost' ? 'GF' : 'OW')}</span>`;
   const badge = status => `<span class="badge ${status === 'In Development' ? 'b-dev' : 'b-soon'}">${esc(status)}</span>`;
   const socialIcon = label => ({Instagram:'◎',YouTube:'▶',Discord:'◉',Twitch:'▣',TikTok:'♪',Website:'↗',Bluesky:'✳',X:'𝕏'}[label] || '↗');
   const favoriteIcon = type => ({game:'🎮',developer:'✦',artwork:'▧'}[type] || '★');
@@ -41,13 +42,45 @@
 
   function projectCard(game) {
     return `<article class="game"><div class="cover cover-${game.cover}" aria-hidden="true"><span class="cover-kicker">${esc(game.subtitle)}</span><strong>${esc(game.name)}</strong></div>
-      <div class="game-body"><div class="game-top"><h3>${esc(game.name)}</h3>${badge(game.status)}</div><p class="meta">${esc(game.genre)}${game.version ? ` · ${esc(game.version)}` : ''}</p>
-      <p>${esc(game.blurb)}</p><button class="btn btn-ghost btn-sm" data-game="${esc(game.id)}">Project details</button></div></article>`;
+      <div class="game-body"><div class="game-top"><div class="game-card-title">${projectIcon(game)}<h3>${esc(game.name)}</h3></div>${badge(game.status)}</div><p class="meta">${esc(game.genre)}${game.version ? ` · ${esc(game.version)}` : ''}</p>
+      <p>${esc(game.blurb)}</p><a class="btn btn-ghost btn-sm" href="project.html?id=${encodeURIComponent(game.id)}">Project details</a></div></article>`;
+  }
+  const memberFilterOptions = ['Coder / Scripter','Modeler','Tester','Artist','Updater','Announcer',...DATA.games.map(game => game.name)];
+  function tagsForMember(member) {
+    const roleText = member.roles.join(' ').toLowerCase();
+    const tags = [];
+    if (/coder|scripter/.test(roleText)) tags.push('Coder / Scripter');
+    if (/modeler|modeller/.test(roleText)) tags.push('Modeler');
+    if (/tester/.test(roleText)) tags.push('Tester');
+    if (/artist/.test(roleText)) tags.push('Artist');
+    if (/updater/.test(roleText)) tags.push('Updater');
+    if (/announcer/.test(roleText)) tags.push('Announcer');
+    return [...new Set([...tags,...member.projects])];
+  }
+  function memberCard(member) {
+    const tags = tagsForMember(member);
+    return `<article class="member" data-member-card data-tags="${esc(tags.join('|'))}" data-search="${esc([member.online,member.real,member.title,...member.roles,...member.projects].join(' '))}">${avatar(member.online)}<div><h3>${esc(member.online)}</h3><p class="role">${esc(member.title)}</p><p><strong>Real name:</strong> ${esc(member.real)}</p><p><strong>Roles:</strong> ${member.roles.map(esc).join(', ')}</p><div class="member-tags" aria-label="Member roles and projects">${tags.map(tag => `<span class="tag member-tag${DATA.games.some(game => game.name === tag) ? ' member-tag-project' : ''}">${esc(tag)}</span>`).join('')}</div></div></article>`;
+  }
+  let activeMemberTag = 'All';
+  function updateMemberResults() {
+    const query = ($('#member-search')?.value || '').trim().toLowerCase();
+    const cards = $$('[data-member-card]');
+    let shown = 0;
+    cards.forEach(card => {
+      const tags = card.dataset.tags.split('|');
+      const matchesTag = activeMemberTag === 'All' || tags.includes(activeMemberTag);
+      const matchesQuery = !query || `${card.dataset.search} ${card.dataset.tags}`.toLowerCase().includes(query);
+      card.hidden = !(matchesTag && matchesQuery);
+      if (!card.hidden) shown++;
+    });
+    const empty = $('#member-no-results');
+    if (empty) empty.hidden = shown > 0;
   }
   function favoriteCard(type, item) {
     if (!item?.title) return '';
-    const artworkClass = type === 'game' ? `favorite-cover cover-${(gameByName(item.title) || {}).cover || 'frost'}` : `favorite-icon favorite-icon-${type}`;
-    const icon = type === 'game' ? `<span class="${artworkClass}" aria-hidden="true"><b>${esc(item.title.slice(0,1))}</b></span>` : `<span class="${artworkClass}" aria-hidden="true">${favoriteIcon(type)}</span>`;
+    const game = type === 'game' ? gameByName(item.title) : null;
+    const artworkClass = type === 'game' ? `favorite-cover cover-${game?.cover || 'frost'}` : `favorite-icon favorite-icon-${type}`;
+    const icon = type === 'game' ? `<span class="${artworkClass}" aria-hidden="true">${game?.icon ? `<img src="${esc(game.icon)}" alt="">` : `<b>${esc(item.title.slice(0,1))}</b>`}</span>` : `<span class="${artworkClass}" aria-hidden="true">${favoriteIcon(type)}</span>`;
     return `<article class="favorite-card">${icon}<div class="favorite-copy"><span class="favorite-type">Favorite ${esc(type)}</span><strong>${esc(item.title)}</strong><p>${esc(item.comment || 'No comment added.')}</p></div></article>`;
   }
   function socialsMarkup(socials) {
@@ -88,23 +121,33 @@
         <div class="actions"><a class="btn btn-primary" href="games.html">Explore our games</a><a class="btn btn-ghost" href="list.html">Meet the team</a></div></div><div class="sun-wrap" aria-hidden="true"><div class="rays"></div><div class="sun"></div></div></section>
         <div class="wrap"><section class="block" aria-labelledby="h-feat"><div class="sec-head"><h2 id="h-feat">Now in development</h2><a class="more" href="games.html">All projects</a></div>
         <article class="feature"><div class="cover cover-${game.cover}" aria-hidden="true"><span class="cover-kicker">${esc(game.subtitle)}</span><strong>${esc(game.name)}</strong></div>
-        <div class="feature-body"><div>${badge(game.status)}</div><h3>${esc(game.name)}: ${esc(game.subtitle)}</h3><p>${esc(game.blurb)}</p><p class="meta">${esc(game.genre)} · ${esc(game.version)}</p><a class="btn btn-primary" href="games.html">Project details</a></div></article></section>
+        <div class="feature-body"><div>${badge(game.status)}</div><h3>${esc(game.name)}: ${esc(game.subtitle)}</h3><p>${esc(game.blurb)}</p><p class="meta">${esc(game.genre)} · ${esc(game.version)}</p><a class="btn btn-primary" href="project.html?id=${encodeURIComponent(game.id)}">Project details</a></div></article></section>
         <section class="block" aria-labelledby="h-projects"><div class="sec-head"><h2 id="h-projects">Studio projects</h2><a class="more" href="games.html">Browse games</a></div><div class="grid">${DATA.games.map(projectCard).join('')}</div></section>
         <section class="band" aria-labelledby="h-team"><div><h2 id="h-team">Meet the Solaris team</h2><p>Solaris Studio is currently built by two active members.</p></div><a class="btn" href="list.html">View the team</a></section></div>`;
     },
     list() {
-      return `<div class="wrap"><div class="page-head"><h1>List</h1><p>Meet the active members of Solaris Studio.</p></div><div class="members">${DATA.members.map(member => `<article class="member">${avatar(member.online)}<div><h3>${esc(member.online)}</h3><p class="role">${esc(member.title)}</p><p><strong>Real name:</strong> ${esc(member.real)}</p><p><strong>Roles:</strong> ${member.roles.map(esc).join(', ')}</p><p class="meta"><strong>Projects:</strong> ${member.projects.map(esc).join(', ')}</p></div></article>`).join('')}</div><div class="page-end"></div></div>`;
+      return `<div class="wrap"><div class="page-head"><h1>List</h1><p>Meet the active members of Solaris Studio.</p></div>
+        <section class="member-directory" aria-label="Search and filter members"><label class="member-search-wrap"><span class="visually-hidden">Search by member, role, or project</span><span class="member-search-icon" aria-hidden="true">⌕</span><input id="member-search" type="search" data-member-search placeholder="Search members, roles, or games…" autocomplete="off"></label>
+        <div class="member-filter-bar" role="group" aria-label="Filter members by role or project"><button class="member-filter-chip" type="button" data-member-filter="All" aria-pressed="true">All</button>${memberFilterOptions.map(tag => `<button class="member-filter-chip" type="button" data-member-filter="${esc(tag)}" aria-pressed="false">${esc(tag)}</button>`).join('')}</div></section>
+        <div class="members" id="member-results">${DATA.members.map(memberCard).join('')}</div><p class="empty member-empty" id="member-no-results" hidden>No active members match that search or tag yet.</p><div class="page-end"></div></div>`;
     },
     games() { return `<div class="wrap"><div class="page-head"><h1>Games</h1><p>Solaris Studio is new, with one game in development and one planned for the future.</p></div><div class="grid">${DATA.games.map(projectCard).join('')}</div><div class="page-end"></div></div>`; },
     updates() { return `<div class="wrap"><div class="page-head"><h1>Updates</h1><p>News and development updates from Solaris Studio.</p></div><p class="empty">There are no updates yet. Check back as Gamma Frost development continues.</p><div class="page-end"></div></div>`; },
     arts() { return `<div class="wrap"><div class="page-head"><h1>Arts</h1><p>Artwork from Solaris Studio.</p></div><p class="empty">The gallery is empty for now. We’ll share artwork here when it’s ready.</p><div class="page-end"></div></div>`; },
-    groups() { return `<div class="wrap"><div class="page-head"><h1>Groups</h1><p>Join the Solaris Studio community and find our official group links here.</p></div><section class="account-panel groups-panel"><h2>Solaris communities</h2><a class="group-link" href="https://discord.gg/Wg6Y9Yc4JA" target="_blank" rel="noopener noreferrer"><span class="group-link-icon" aria-hidden="true">◉</span><span><strong>Solaris Studio Discord</strong><small>Join the community</small></span><span class="group-link-arrow" aria-hidden="true">↗</span></a></section><div class="page-end"></div></div>`; },
-    download() { return `<div class="wrap"><div class="page-head"><h1>Download</h1><p>Get Solaris Studio game builds.</p></div><p class="empty">There are no downloads yet. Gamma Frost is in development, and OmiWo: Collide is a future project.</p><div class="page-end"></div></div>`; },
+    groups() { return `<div class="wrap"><div class="page-head"><h1>Groups</h1><p>Join the Solaris Studio community and find our official group links here.</p></div><section class="group-intro"><span class="section-eyebrow">ABOUT OUR COMMUNITY</span><h2>Small team, big dreams.</h2><p>Solaris Studio is an early-stage game development community with two active developers. We make games to bring the things we dream of creating to life.</p></section><section class="account-panel groups-panel"><h2>Solaris communities</h2><a class="group-link" href="https://discord.gg/Wg6Y9Yc4JA" target="_blank" rel="noopener noreferrer"><span class="group-link-icon" aria-hidden="true">◉</span><span><strong>Solaris Studio Discord</strong><small>Join the community</small></span><span class="group-link-arrow" aria-hidden="true">↗</span></a></section><div class="page-end"></div></div>`; },
+    download() { return `<div class="wrap"><div class="page-head"><h1>Download</h1><p>Extras and add-ons for Solaris Studio games.</p></div><section class="download-intro"><span class="section-eyebrow">PLUGINS · MODS · EXTRAS</span><h2>Useful extras for your games</h2><p>This page is for game plugins, mods, and other extras. Game downloads will be listed on their own project details pages.</p></section><div class="download-categories"><section class="download-category"><h2>Plugins &amp; tools</h2><p>No plugins or tools are available yet.</p></section><section class="download-category"><h2>Mods &amp; add-ons</h2><p>No mods or add-ons are available yet.</p></section></div><div class="project-download-links"><h2>Game pages</h2>${DATA.games.map(game => `<a class="text-link" href="project.html?id=${encodeURIComponent(game.id)}">${esc(game.name)} project details <span aria-hidden="true">↗</span></a>`).join('')}</div><div class="page-end"></div></div>`; },
+    project() {
+      const requestedId = new URLSearchParams(location.search).get('id');
+      const game = gameById(requestedId) || DATA.games[0];
+      const otherProjects = [game,...DATA.games.filter(project => project.id !== game.id)].map(project => `<a class="project-switch-card${project.id === game.id ? ' is-current' : ''}" href="project.html?id=${encodeURIComponent(project.id)}"${project.id === game.id ? ' aria-current="page"' : ''}>${projectIcon(project)}<span class="project-switch-copy"><strong>${esc(project.name)}</strong><small>${esc(project.subtitle)}</small><span class="project-switch-status">${esc(project.status)}</span></span><span class="project-switch-arrow" aria-hidden="true">↗</span></a>`).join('');
+      return `<div class="project-page"><div class="project-banner project-banner-${esc(game.cover)}" role="img" aria-label="${esc(game.name)} project banner"><div class="project-banner-mark">${esc(game.name)}</div></div><div class="wrap project-layout"><main class="project-detail-main"><a class="project-back" href="games.html">← All projects</a><div class="project-heading">${projectIcon(game)}<div><div class="project-status-row">${badge(game.status)}${game.version ? `<span class="project-version">${esc(game.version)}</span>` : ''}</div><h1>${esc(game.name)}</h1><p class="project-subtitle">${esc(game.subtitle)} · ${esc(game.genre)}</p></div></div><section class="project-copy"><h2>About this project</h2><p>${esc(game.details)}</p><p>${esc(game.blurb)}</p></section><section class="project-copy project-extra"><h2>Downloads</h2><p>${game.status === 'In Development' ? 'There are no public game builds yet. Check back as development continues.' : 'This project is planned for the future and has no downloads yet.'}</p><a class="text-link" href="download.html">Browse plugins, mods, and extras <span aria-hidden="true">↗</span></a></section></main><aside class="project-switcher" aria-label="Solaris projects"><span class="section-eyebrow">SOLARIS PROJECTS</span><h2>Explore projects</h2><div class="project-switch-list">${otherProjects}</div></aside></div></div>`;
+    },
     account() { return '<div class="wrap"><div class="page-head"><h1>Profile</h1><p>Loading your Solaris account…</p></div></div>'; }
   };
   function renderPage() {
     app.innerHTML = (views[page] || views.home)();
-    document.title = `${titles[page] ? `${titles[page]} | ` : ''}Solaris Studio`;
+    const selectedProject = page === 'project' ? gameById(new URLSearchParams(location.search).get('id')) || DATA.games[0] : null;
+    document.title = selectedProject ? `${selectedProject.name} | Solaris Studio` : `${titles[page] ? `${titles[page]} | ` : ''}Solaris Studio`;
     $('#nav-list').innerHTML = ROUTES.map(([id,label,href]) => `<li><a href="${href}"${id === page ? ' aria-current="page"' : ''}>${label}</a></li>`).join('');
   }
   function toast(message) {
@@ -389,6 +432,7 @@
     const addSocial = event.target.closest('[data-add-social]');
     const removeSocial = event.target.closest('[data-remove-social]');
     const profileOptions = event.target.closest('[data-profile-options]');
+    const memberFilterButton = event.target.closest('[data-member-filter]');
     const openImage = event.target.closest('[data-open-image]');
     const cropCancel = event.target.closest('[data-crop-cancel]');
     const cropSave = event.target.closest('[data-crop-save]');
@@ -406,8 +450,12 @@
       noteToggle.hidden = true;
       if (bubble) bubble.hidden = false;
       noteToggle.parentElement?.classList.add('is-expanded');
-
-
+      return;
+    }
+    if (memberFilterButton) {
+      activeMemberTag = memberFilterButton.dataset.memberFilter;
+      $$('[data-member-filter]').forEach(button => button.setAttribute('aria-pressed',String(button === memberFilterButton)));
+      updateMemberResults();
       return;
     }
     if (profileOptions) {
@@ -477,6 +525,7 @@
     }
   });
   document.addEventListener('input',event => {
+    if (event.target.matches('[data-member-search]')) { updateMemberResults(); return; }
     if (!cropSession) return;
     if (event.target.id === 'crop-zoom') { cropSession.zoom = Number(event.target.value); paintCrop(); }
     else if (event.target.id === 'crop-rotation') { cropSession.rotation = Number(event.target.value); paintCrop(); }
