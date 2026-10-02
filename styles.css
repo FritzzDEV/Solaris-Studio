@@ -527,3 +527,11 @@ dialog::backdrop{background:var(--backdrop)}
   .avatar-picker-scrim{inset:4px}
 }
 
+
+/* A note expands in place from its ellipsis and becomes read-only text. */
+.note-control-pop{right:auto;width:calc(100% - 80px)}
+.note-control .note-bubble{top:0;left:0;pointer-events:none;transform-origin:top left}
+.note-control-pop .note-bubble{width:max-content;max-width:100%}
+.note-control .note-bubble:not([hidden]){animation:note-expand-in .2s cubic-bezier(.2,.8,.25,1) both}
+.note-control .note-bubble::after{left:-9px;top:15px;bottom:auto;border:9px solid transparent;border-right-color:var(--surface);border-left:0;filter:drop-shadow(-1px 1px 0 var(--line))}
+@keyframes note-expand-in{from{opacity:0;transform:scale(.76)}to{opacity:1;transform:scale(1)}}

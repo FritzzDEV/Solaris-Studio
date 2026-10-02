@@ -125,10 +125,20 @@
     $$('[data-note-toggle]',popover).forEach(button => {
       const bubble = button.nextElementSibling;
       if (bubble) bubble.hidden = true;
+      button.hidden = false;
+      button.closest('.note-control')?.classList.remove('is-expanded');
       button.setAttribute('aria-expanded','false');
       button.setAttribute('aria-label','Show profile note');
     });
   }
+  window.addEventListener('pagehide', () => {
+    $$('[data-note-toggle]').forEach(button => {
+      const bubble = button.nextElementSibling;
+      if (bubble) bubble.hidden = true;
+      button.hidden = false;
+      button.closest('.note-control')?.classList.remove('is-expanded');
+    });
+  });
   function favoriteControl(type, current) {
     const options = type === 'game' ? DATA.games.map(game => [game.name,game.name]) : type === 'developer' ? DATA.members.map(member => [member.online,member.online]) : DATA.arts.map(art => [art.title,art.title]);
     const emptyText = type === 'artwork' && !options.length ? 'No Solaris artwork is available to favorite yet.' : 'None';
@@ -392,10 +402,12 @@
     if (profileButton) { const popover = $('#profile-popover'); if (!popover.hidden) closeProfile(); else { popover.hidden = false; profileButton.setAttribute('aria-expanded','true'); } return; }
     const noteToggle = event.target.closest('[data-note-toggle]');
     if (noteToggle) {
-      const bubble = noteToggle.nextElementSibling, open = bubble.hidden;
-      bubble.hidden = !open;
-      noteToggle.setAttribute('aria-expanded',String(open));
-      noteToggle.setAttribute('aria-label',open ? 'Hide profile note' : 'Show profile note');
+      const bubble = noteToggle.nextElementSibling;
+      noteToggle.hidden = true;
+      if (bubble) bubble.hidden = false;
+      noteToggle.parentElement?.classList.add('is-expanded');
+
+
       return;
     }
     if (profileOptions) {
