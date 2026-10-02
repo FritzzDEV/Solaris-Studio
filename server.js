@@ -14,8 +14,8 @@ const PORT = Number(process.env.PORT) || 4173;
 const HOST = '0.0.0.0';
 const SESSION_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_BODY = 3 * 1024 * 1024;
-const STATIC_FILES = new Set(['index.html', 'list.html', 'games.html', 'project.html', 'updates.html', 'account.html', 'arts.html', 'groups.html', 'download.html', 'assets/hollow-shift-icon.webp', 'styles.css', 'app.js']);
-const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.webp': 'image/webp' };
+const STATIC_FILES = new Set(['index.html', 'list.html', 'games.html', 'project.html', 'artwork.html', 'updates.html', 'account.html', 'arts.html', 'groups.html', 'download.html', 'assets/hollow-shift-icon.webp', 'assets/gamma-frost-banner.webp', 'assets/golden-spiral-sun-icon.png', 'styles.css', 'app.js']);
+const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.webp': 'image/webp', '.png': 'image/png' };
 
 let accounts = [];
 const sessions = new Map();
