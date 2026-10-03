@@ -26,7 +26,7 @@
     owner:'Owns Solaris Studio and manages its team roles.'
   };
   const SECONDARY_ROLE_TAGS = ['Scripter','Coder','Modeler','Tester','Updater','Announcer','Debugger','App tester','Artist'];
-  const EMPTY_FRIEND_CARD = {likes:'',dislikes:'',favoriteThing:'',lookingFor:'',personalityTags:[],backgroundImage:'',backgroundColor:'#fff8e9',borderStyle:'solid',borderColor:'#dcae55',borderWidth:2,buttonColor:'#3c315b',buttonTextColor:'#ffffff',buttonBorderStyle:'solid',buttonBorderColor:'#3c315b',effect:'glow'};
+  const EMPTY_FRIEND_CARD = {published:false,likes:'',dislikes:'',favoriteThing:'',lookingFor:'',personalityTags:[],backgroundImage:'',backgroundColor:'#fff8e9',borderStyle:'solid',borderColor:'#dcae55',borderWidth:2,buttonColor:'#3c315b',buttonTextColor:'#ffffff',buttonBorderStyle:'solid',buttonBorderColor:'#3c315b',effect:'glow'};
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -83,7 +83,8 @@
   }
   function memberCard(member) {
     const tags = tagsForMember(member);
-    return `<article class="member" data-member-card data-tags="${esc(tags.join('|'))}" data-search="${esc([member.online,member.real,...member.roles,...member.projects].join(' '))}">${avatar(member.online,'',member.avatarImage)}<div><h3>${esc(member.online)}</h3><p><strong>Real name:</strong> ${esc(member.real)}</p><div class="member-tags" aria-label="Member roles and projects">${tags.map(tag => `<span class="tag member-tag${DATA.games.some(game => game.name === tag) ? ' member-tag-project' : ''}">${esc(tag)}</span>`).join('')}</div>${member.id ? `<a class="member-profile-link" href="account.html?user=${encodeURIComponent(member.id)}">View profile <span aria-hidden="true">↗</span></a>` : ''}</div></article>`;
+    const photo = member.id ? `<a class="member-avatar-link" href="account.html?user=${encodeURIComponent(member.id)}" aria-label="Open ${esc(member.online)}’s full profile">${avatar(member.online,'',member.avatarImage)}</a>` : avatar(member.online,'',member.avatarImage);
+    return `<article class="member" data-member-card data-tags="${esc(tags.join('|'))}" data-search="${esc([member.online,member.real,...member.roles,...member.projects].join(' '))}">${photo}<div><h3>${esc(member.online)}</h3><p><strong>Real name:</strong> ${esc(member.real)}</p><div class="member-tags" aria-label="Member roles and projects">${tags.map(tag => `<span class="tag member-tag${DATA.games.some(game => game.name === tag) ? ' member-tag-project' : ''}">${esc(tag)}</span>`).join('')}</div>${member.id ? `<a class="member-profile-link" href="account.html?user=${encodeURIComponent(member.id)}">View profile <span aria-hidden="true">↗</span></a>` : ''}</div></article>`;
   }
   let activeMemberTag = 'All';
   function updateMemberResults() {
@@ -106,6 +107,7 @@
       const result = await api('/api/team');
       DATA.members = result.members || [];
       if (page === 'list' && container) { container.innerHTML = DATA.members.map(memberCard).join(''); renderMemberFilters(); updateMemberResults(); }
+      updateGlobalSearchResults();
       if (page === 'account' && currentUser && editingProfile) showAccount();
     } catch (_) {
       if (page === 'list' && container) { container.innerHTML = ''; setMessage('#member-load-message','Team profiles could not be loaded. Please refresh the page.'); }
@@ -122,13 +124,14 @@
     const effect = ['none','glow','lift','shine'].includes(card.effect) ? card.effect : 'glow';
     const image = card.backgroundImage ? `background-image:linear-gradient(135deg,#ffffffba,#fff9e1b8),url(&quot;${esc(card.backgroundImage)}&quot;)` : '';
     const title = esc(member.username || 'Solaris Member');
+    const profileAvatar = member.id && !editor ? `<a class="friend-card-profile-link" href="account.html?user=${encodeURIComponent(member.id)}" aria-label="Open ${title}’s full profile">${avatar(member.username,'friend-card-avatar',member.avatarImage)}</a>` : avatar(member.username,'friend-card-avatar',member.avatarImage);
     const tags = card.personalityTags.map(tag => `<span class="friend-personality-tag">${esc(tag)}</span>`).join('');
     const details = [
       ['What I like',card.likes],['What I dislike',card.dislikes],['My favorite thing',card.favoriteThing],['The kind of friend I’m looking for',card.lookingFor]
     ].map(([label,value]) => `<section class="friend-detail"><h3>${label}</h3><p>${esc(value || 'Not added yet.')}</p></section>`).join('');
     const searchData = !full && !editor ? esc([member.username,card.likes,card.dislikes,card.favoriteThing,card.lookingFor,...card.personalityTags].join(' ')) : '';
     return `<article class="friend-card friend-card-effect-${effect}${full ? ' friend-card-full' : ' friend-card-preview'}"${!full && !editor ? ` data-friend-member data-friend-search="${searchData}"` : ''} style="${friendCardStyle(card)};${image}" aria-label="${title} Friend-Card">
-      <div class="friend-card-top">${avatar(member.username,'friend-card-avatar',member.avatarImage)}<div class="friend-card-name"><span class="section-eyebrow">SOLARIS MEMBER</span><h2>${title}</h2></div>${!full ? '<span class="friend-card-sun" aria-hidden="true">✦</span>' : ''}</div>
+      <div class="friend-card-top">${profileAvatar}<div class="friend-card-name"><span class="section-eyebrow">SOLARIS MEMBER</span><h2>${title}</h2></div>${!full ? '<span class="friend-card-sun" aria-hidden="true">✦</span>' : ''}</div>
       ${full ? `<div class="friend-card-details">${details}</div>` : `<p class="friend-card-teaser">${esc(card.likes || card.favoriteThing || 'A little introduction is coming soon.')}</p>${card.favoriteThing ? `<p class="friend-card-favorite"><span>Favorite thing</span><strong>${esc(card.favoriteThing)}</strong></p>` : ''}`}
       ${tags ? `<div class="friend-personality-list" aria-label="Personality tags">${full ? tags : card.personalityTags.slice(0,4).map(tag => `<span class="friend-personality-tag">${esc(tag)}</span>`).join('')}${!full && card.personalityTags.length > 4 ? `<span class="friend-personality-more">+${card.personalityTags.length - 4}</span>` : ''}</div>` : !full ? '' : '<p class="friend-card-empty-tags">No personality tags added yet.</p>'}
       ${full ? `<button class="friend-card-open friend-card-custom-button" type="button" data-copy-member-link="${esc(member.id || '')}" style="--friend-button-bg:${esc(card.buttonColor)};--friend-button-text:${esc(card.buttonTextColor)};--friend-button-stroke:${esc(card.buttonBorderColor)};--friend-button-stroke-style:${esc(card.buttonBorderStyle)}">Copy profile link</button>` : `<button class="friend-card-open" type="button"${editor ? ' disabled' : ` data-open-friend-card="${esc(member.id || '')}"`} style="--friend-button-bg:${esc(card.buttonColor)};--friend-button-text:${esc(card.buttonTextColor)};--friend-button-stroke:${esc(card.buttonBorderColor)};--friend-button-stroke-style:${esc(card.buttonBorderStyle)}">Open Friend-Card</button>`}
@@ -149,7 +152,7 @@
         <div class="friend-card-asset-row"><div><strong>Friend-Card background image</strong><small>Upload your own JPG, PNG, or WebP image. It is resized before saving.</small></div>${imagePreview}<input type="file" accept="image/png,image/jpeg,image/webp" data-friend-card-image hidden><input type="hidden" name="friendCardBackgroundImage" value="${esc(card.backgroundImage)}"><div class="friend-card-asset-actions"><button class="btn btn-ghost btn-sm" type="button" data-choose-friend-card-image>Choose image</button><button class="btn btn-ghost btn-sm" type="button" data-remove-friend-card-image${card.backgroundImage ? '' : ' hidden'}>Remove</button></div></div>
         <div class="friend-design-grid"><label>Card background<input type="color" name="friendCardBackgroundColor" value="${esc(card.backgroundColor)}"></label><label>Card stroke<input type="color" name="friendCardBorderColor" value="${esc(card.borderColor)}"></label><label>Stroke design<select name="friendCardBorderStyle">${options(['solid','dashed','dotted','double','groove','ridge'],card.borderStyle,['Solid','Dashed','Dotted','Double','Groove','Ridge'])}</select></label><label>Stroke width<select name="friendCardBorderWidth">${options(['1','2','3','4','5','6','7','8'],String(card.borderWidth),['1 px','2 px','3 px','4 px','5 px','6 px','7 px','8 px'])}</select></label><label>Card effect<select name="friendCardEffect">${options(['none','glow','lift','shine'],card.effect,['None','Soft glow','Lift on hover','Shine'])}</select></label></div>
         <div class="friend-design-grid friend-button-design"><h3>Open Friend-Card button</h3><label>Button background<input type="color" name="friendCardButtonColor" value="${esc(card.buttonColor)}"></label><label>Button text<input type="color" name="friendCardButtonTextColor" value="${esc(card.buttonTextColor)}"></label><label>Button stroke<input type="color" name="friendCardButtonBorderColor" value="${esc(card.buttonBorderColor)}"></label><label>Button stroke design<select name="friendCardButtonBorderStyle">${options(['solid','dashed','dotted','double','groove','ridge'],card.buttonBorderStyle,['Solid','Dashed','Dotted','Double','Groove','Ridge'])}</select></label></div>
-      </div><div class="friend-card-editor-preview"><span class="section-eyebrow">LIVE PREVIEW</span><div id="friend-card-live-preview">${friendCardMarkup({...user,friendCard:card},false,true)}</div></div></div></section>`;
+      </div><div class="friend-card-editor-preview"><span class="section-eyebrow">LIVE PREVIEW</span><div id="friend-card-live-preview">${friendCardMarkup({...user,friendCard:card},false,true)}</div></div></div><div class="friend-card-publish-row"><div><strong>${card.published ? 'Your Friend-Card is posted.' : 'Your Friend-Card is private.'}</strong><p>${card.published ? 'Save profile changes to update your posted card.' : 'It will appear in Members only after you post it.'}</p></div><button class="btn btn-primary" type="button" data-post-friend-card>${card.published ? 'Update posted Friend-Card' : 'Post custom friend card'}</button><p class="form-message" id="friend-card-post-message" role="status"></p></div></section>`;
   }
   function friendCardFromForm(form) {
     if (!form?.elements.friendCardLikes) return null;
@@ -189,15 +192,20 @@
   }
   async function loadMemberProfiles() {
     const grid = $('#member-card-grid');
-    if (!grid) return;
     try {
       const result = await api('/api/members');
       memberProfiles = result.members || [];
-      grid.innerHTML = memberProfiles.map(member => friendCardMarkup(member)).join('');
-      filterFriendCards($('[data-friend-search]')?.value || '');
+      if (grid) {
+        const postedCards = memberProfiles.filter(member => member.friendCard?.published === true);
+        grid.innerHTML = postedCards.map(member => friendCardMarkup(member)).join('');
+        filterFriendCards($('[data-friend-search]')?.value || '');
+      }
+      updateGlobalSearchResults();
     } catch (error) {
-      grid.innerHTML = '';
-      setMessage('#member-card-message',error.message || 'Member cards could not be loaded. Please refresh the page.');
+      if (grid) {
+        grid.innerHTML = '';
+        setMessage('#member-card-message',error.message || 'Member cards could not be loaded. Please refresh the page.');
+      }
     }
   }
   function filterFriendCards(value) {
@@ -207,7 +215,8 @@
     const empty = $('#member-card-empty');
     if (empty) {
       empty.hidden = shown > 0;
-      empty.textContent = memberProfiles.length ? 'No Member accounts match that search.' : 'No Member accounts yet. When someone joins with the Member role, their Friend-Card will appear here.';
+      const postedCount = memberProfiles.filter(member => member.friendCard?.published === true).length;
+      empty.textContent = postedCount ? 'No posted Friend-Cards match that search.' : 'No custom Friend-Cards have been posted yet.';
     }
   }
   function favoriteCard(type, item) {
@@ -279,7 +288,7 @@
         <div class="members" id="member-results"></div><p class="empty member-empty" id="member-no-results">Studio team profiles appear here when the Owner assigns Assistant, AI Assistant, or Developer roles.</p><p class="form-message" id="member-load-message" role="status"></p><div class="page-end"></div></div>`;
     },
     members() {
-      return `<div class="wrap"><div class="page-head"><span class="section-eyebrow">MEET THE COMMUNITY</span><h1>Members</h1><p>Member accounts make a Friend-Card in their own style. Studio roles have their own profiles on the List page.</p></div><section class="member-directory friend-directory" aria-label="Search member Friend-Cards"><label class="member-search-wrap"><span class="visually-hidden">Search member Friend-Cards</span><span class="member-search-icon" aria-hidden="true">⌕</span><input type="search" data-friend-search placeholder="Search members…" autocomplete="off"></label></section><div class="friend-card-grid" id="member-card-grid"></div><p class="empty member-empty" id="member-card-empty">No Member accounts yet. When someone joins with the Member role, their Friend-Card will appear here.</p><p class="form-message" id="member-card-message" role="status"></p><div class="page-end"></div></div>`;
+      return `<div class="wrap"><div class="page-head"><span class="section-eyebrow">MEET THE COMMUNITY</span><h1>Members</h1><p>Member accounts make a Friend-Card in their own style. Cards appear here only after the member chooses to post them. Studio roles have their own profiles on the List page.</p></div><section class="member-directory friend-directory" aria-label="Search member Friend-Cards"><label class="member-search-wrap"><span class="visually-hidden">Search member Friend-Cards</span><span class="member-search-icon" aria-hidden="true">⌕</span><input type="search" data-friend-search placeholder="Search posted cards…" autocomplete="off"></label></section><div class="friend-card-grid" id="member-card-grid"></div><p class="empty member-empty" id="member-card-empty">No custom Friend-Cards have been posted yet.</p><p class="form-message" id="member-card-message" role="status"></p><div class="page-end"></div></div>`;
     },
     games() { return `<div class="wrap"><div class="page-head"><h1>Games</h1><p>Solaris Studio is new, with one game in development and one planned for the future.</p></div><div class="grid">${DATA.games.map(projectCard).join('')}</div><div class="page-end"></div></div>`; },
     updates() { return `<div class="wrap"><div class="page-head"><h1>Updates</h1><p>News and development updates from Solaris Studio.</p></div><article class="update-card"><span class="section-eyebrow">DEVELOPMENT NOTE</span><h2>Gamma Frost production is slow</h2><p>Gamma Frost production is moving slowly because I’m currently the only person working on it. That means I can’t build every part of the game at once, so development will take time.</p><p>When Gamma Frost reaches early access, it will not yet be an MMORPG. The game will begin in a more limited form, and its larger online world will take longer to build. Thank you for your patience while I keep working on it.</p></article><div class="page-end"></div></div>`; },
@@ -319,6 +328,37 @@
     const selectedArtwork = page === 'artwork' ? artById(new URLSearchParams(location.search).get('id')) || DATA.arts[0] : null;
     document.title = selectedProject ? `${selectedProject.name} | Solaris Studio` : selectedArtwork ? `${selectedArtwork.title} | Solaris Studio` : `${titles[page] ? `${titles[page]} | ` : ''}Solaris Studio`;
     $('#nav-list').innerHTML = ROUTES.map(([id,label,href]) => `<li><a href="${href}"${id === page ? ' aria-current="page"' : ''}>${label}</a></li>`).join('');
+    ensureGlobalSearch();
+  }
+  function ensureGlobalSearch() {
+    const slot = $('.top-in');
+    const profile = slot?.querySelector('.profile-wrap');
+    if (!slot || !profile || $('#global-search')) return;
+    profile.insertAdjacentHTML('beforebegin',`<div class="global-search" id="global-search"><button class="global-search-toggle" type="button" data-global-search-toggle aria-label="Search games, artwork, members, and developers" aria-expanded="false" aria-controls="global-search-panel"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"></circle><path d="m16 16 5 5"></path></svg></button><section class="global-search-panel" id="global-search-panel" data-global-search-panel hidden><label class="global-search-input-wrap"><span class="visually-hidden">Search games, artwork, members, and developers</span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"></circle><path d="m16 16 5 5"></path></svg><input type="search" data-global-search-input placeholder="Search games, artwork, people…" autocomplete="off"></label><div class="global-search-results" data-global-search-results aria-live="polite"><p class="global-search-hint">Search across Solaris Studio.</p></div></section></div>`);
+  }
+  function closeGlobalSearch() {
+    const panel = $('[data-global-search-panel]');
+    const toggle = $('[data-global-search-toggle]');
+    if (panel) panel.hidden = true;
+    toggle?.setAttribute('aria-expanded','false');
+  }
+  function updateGlobalSearchResults() {
+    const results = $('[data-global-search-results]');
+    const input = $('[data-global-search-input]');
+    if (!results || !input) return;
+    const query = input.value.trim().toLowerCase();
+    if (!query) { results.innerHTML = '<p class="global-search-hint">Search games, artwork, members, and developers.</p>'; return; }
+    const matches = (items, textFor) => items.filter(item => textFor(item).toLowerCase().includes(query)).slice(0,5);
+    const groups = [];
+    const games = matches(DATA.games,game => [game.name,game.subtitle,game.genre,game.status,game.blurb,game.details].join(' '));
+    if (games.length) groups.push(['Games',games.map(game => `<a class="global-search-result" href="project.html?id=${encodeURIComponent(game.id)}">${projectIcon(game,'global-search-thumb')}<span><strong>${esc(game.name)}</strong><small>${esc(game.status)}${game.subtitle ? ` · ${esc(game.subtitle)}` : ''}</small></span><span class="global-search-arrow" aria-hidden="true">↗</span></a>`).join('')]);
+    const artworks = matches(DATA.arts,art => [art.title,art.type,art.mainTag,...art.tags].join(' '));
+    if (artworks.length) groups.push(['Artworks',artworks.map(art => `<a class="global-search-result" href="${artworkHref(art)}"><span class="global-search-thumb"><img src="${esc(art.image)}" alt=""></span><span><strong>${esc(art.title)}</strong><small>${esc(art.mainTag)} · ${esc(art.type)}</small></span><span class="global-search-arrow" aria-hidden="true">↗</span></a>`).join('')]);
+    const members = matches(memberProfiles,member => [member.username].join(' '));
+    if (members.length) groups.push(['Members',members.map(member => `<a class="global-search-result" href="account.html?user=${encodeURIComponent(member.id)}">${avatar(member.username,'global-search-avatar',member.avatarImage)}<span><strong>${esc(member.username)}</strong><small>Member profile</small></span><span class="global-search-arrow" aria-hidden="true">↗</span></a>`).join('')]);
+    const developers = matches(DATA.members,member => [member.online,member.real,member.primaryRole,...(member.roles || []),...(member.projects || [])].join(' '));
+    if (developers.length) groups.push(['Developers & studio team',developers.map(member => `<a class="global-search-result" href="account.html?user=${encodeURIComponent(member.id)}">${avatar(member.online,'global-search-avatar',member.avatarImage)}<span><strong>${esc(member.online)}</strong><small>${esc(member.primaryRole || member.roles?.[0] || 'Studio profile')}${member.real ? ` · ${esc(member.real)}` : ''}</small></span><span class="global-search-arrow" aria-hidden="true">↗</span></a>`).join('')]);
+    results.innerHTML = groups.length ? groups.map(([title,items]) => `<section class="global-search-group"><h2>${title}</h2>${items}</section>`).join('') : '<p class="global-search-hint">No matches found.</p>';
   }
   function toast(message) {
     const node = $('#toast'); node.textContent = message; node.classList.add('show');
@@ -414,6 +454,32 @@
     } catch (error) { setMessage('#team-admin-message',error.message); }
     finally { button.disabled = false; }
   }
+  function viewedUserRoleManager(user) {
+    if (currentUser?.accountRole !== 'owner' || user.accountRole === 'owner') return '';
+    const assignableRoles = [['assistant','Assistant'],['ai-assistant','AI Assistant'],['developer','Developer'],['member','Member']];
+    return `<section class="account-panel account-panel-wide profile-role-manager" data-role-row data-account-id="${esc(user.id)}"><h2>Manage account roles</h2><p>Assign this account a studio role. Visitor is reserved for guests, and Owner access cannot be assigned here.</p><div class="profile-role-manager-fields"><label>Primary role<select data-primary-role aria-label="Primary role for ${esc(user.username)}">${assignableRoles.map(([value,label]) => `<option value="${value}"${user.primaryRole === value ? ' selected' : ''}>${label}</option>`).join('')}</select></label><label>Secondary role tags<input data-secondary-roles maxlength="640" value="${esc((user.secondaryRoles || []).join(', '))}" placeholder="Scripter, Modeler, Tester…"${user.primaryRole === 'member' ? ' disabled' : ''}></label><button class="btn btn-primary" type="button" data-save-viewed-user-roles>Save roles</button></div><p class="form-message" data-viewed-role-message role="status"></p></section>`;
+  }
+  async function saveViewedUserRoles(button) {
+    const row = button.closest('[data-role-row]');
+    if (!row) return;
+    button.disabled = true;
+    const status = $('[data-viewed-role-message]',row);
+    try {
+      await api('/api/admin/account-roles','PUT',{
+        accountId:row.dataset.accountId,
+        primaryRole:$('[data-primary-role]',row).value,
+        secondaryRoles:$('[data-secondary-roles]',row).value
+      });
+      const result = await api(`/api/public-profile?id=${encodeURIComponent(row.dataset.accountId)}`);
+      app.innerHTML = profileDashboard(result.user,false);
+      toast('Account roles saved.');
+      await loadTeamMembers();
+      await loadMemberProfiles();
+    } catch (error) {
+      if (status) { status.textContent = error.message; status.classList.add('is-error'); }
+      else toast(error.message);
+    } finally { button.disabled = false; }
+  }
   function dangerZone() {
     return `<section class="account-panel account-panel-wide danger-zone"><span class="danger-eyebrow">ACCOUNT MANAGEMENT</span><h2>Danger zone</h2><p>Pause your account for 30 days, or permanently delete it and its Solaris pause backups.</p><div class="danger-actions"><button class="danger-button danger-button-pause" type="button" data-account-action="pause"><strong>Pause account</strong><span>Hide your profile and block logins for 30 days.</span></button><button class="danger-button danger-button-delete" type="button" data-account-action="delete"><strong>Delete account</strong><span>Permanently remove your account and its Solaris backups.</span></button></div><p class="danger-retention-note">Deletion clears account data and pause backups held by Solaris. Git history and backups retained separately by the hosting or database provider follow their own retention policies.</p><div class="account-danger-footer"><button class="btn btn-ghost btn-sm" data-logout>Log out</button></div></section>`;
   }
@@ -427,6 +493,7 @@
     const roleLabel = user.accountRole === 'owner' ? 'Solaris Owner' : (PRIMARY_ROLE_LABELS[user.primaryRole] || 'Member');
     const profileOptions = isOwn ? `<div class="profile-options-wrap"><button class="profile-options-button" type="button" data-profile-options aria-label="Profile options" aria-expanded="false" aria-controls="profile-options">⋮</button><div class="profile-options-menu" id="profile-options" hidden><button type="button" data-edit-account>Edit Profile</button></div></div>` : '';
     const admin = isOwn && user.accountRole === 'owner' ? ownerTeamManager() : '';
+    const viewedRoleManager = !isOwn ? viewedUserRoleManager(user) : '';
     const roleKey = user.accountRole === 'owner' ? 'owner' : user.primaryRole;
     const profileRoles = ['owner','assistant','ai-assistant','developer'].includes(roleKey) ? `<section class="account-panel account-panel-wide profile-roles-panel"><h2>Roles</h2><div class="member-tags"><span class="tag member-tag">${roleKey === 'owner' ? 'Owner' : esc(PRIMARY_ROLE_LABELS[roleKey])}</span>${(user.secondaryRoles || []).map(tag => `<span class="tag member-tag">${esc(tag)}</span>`).join('')}</div><p>${esc(PRIMARY_ROLE_EXPLANATIONS[roleKey])}</p></section>` : '';
     const ownerClaim = isOwn && user.canClaimOwner ? `<section class="account-panel account-panel-wide owner-claim-panel"><span class="section-eyebrow">STUDIO SETUP</span><h2>Claim the Solaris Owner role</h2><p>Your signed-in username is reserved for the Owner account. Enter the one-time setup code configured on the Solaris server to manage registered account roles.</p><form id="owner-claim-form"><label>Owner setup code<input name="ownerSetupCode" type="password" maxlength="200" autocomplete="off" required></label><p class="form-message" id="owner-claim-message" role="status"></p><button class="btn btn-primary" type="submit">Claim Owner role</button></form></section>` : '';
@@ -439,7 +506,7 @@
         <section class="account-panel"><h2>Likes</h2><p>${esc(user.likes || 'No likes added yet.')}</p></section>
         <section class="account-panel"><h2>Dislikes</h2><p>${esc(user.dislikes || 'No dislikes added yet.')}</p></section>
         <section class="account-panel account-panel-wide"><h2>Favorites</h2>${favoriteCards.length ? `<div class="favorite-grid">${favoriteCards.join('')}</div>` : '<p class="empty-inline">No favorites added yet. Edit your profile to choose favorites.</p>'}</section>
-        <section class="account-panel account-panel-wide"><h2>Installed games</h2><div class="tag-list">${installed}</div></section>${profileRoles}${admin}${ownerClaim}
+        <section class="account-panel account-panel-wide"><h2>Installed games</h2><div class="tag-list">${installed}</div></section>${profileRoles}${admin}${viewedRoleManager}${ownerClaim}
       </div>${isOwn ? `<p class="account-footnote">Your profile is saved by the Solaris server. Real name and profile details are optional.</p>${dangerZone()}${dangerDialog()}` : ''}</div>`;
   }
   function profileEditor(user) {
@@ -683,6 +750,7 @@
 
   document.addEventListener('click', async event => {
     const menuButton = event.target.closest('[data-menu]');
+    const globalSearchToggle = event.target.closest('[data-global-search-toggle]');
     const themeButton = event.target.closest('[data-theme-toggle]');
     const profileButton = event.target.closest('#profile-button');
     const closeButton = event.target.closest('[data-close]');
@@ -691,6 +759,8 @@
     const shopTicket = event.target.closest('[data-shop-ticket]');
     const guestEntry = event.target.closest('[data-view-guest]');
     const saveRoles = event.target.closest('[data-save-account-roles]');
+    const saveViewedRoles = event.target.closest('[data-save-viewed-user-roles]');
+    const postFriendCard = event.target.closest('[data-post-friend-card]');
     const addSocial = event.target.closest('[data-add-social]');
     const removeSocial = event.target.closest('[data-remove-social]');
     const openFriendCard = event.target.closest('[data-open-friend-card]');
@@ -707,12 +777,40 @@
     const cropSave = event.target.closest('[data-crop-save]');
     const cropRatio = event.target.closest('[data-crop-ratio]');
     const cropRotate = event.target.closest('[data-crop-rotate]');
-    if (menuButton) { const nav = $('#nav'), open = nav.classList.toggle('open'); menuButton.setAttribute('aria-expanded',String(open)); return; }
+    if (menuButton) { closeGlobalSearch(); const nav = $('#nav'), open = nav.classList.toggle('open'); menuButton.setAttribute('aria-expanded',String(open)); return; }
+    if (globalSearchToggle) {
+      const panel = $('[data-global-search-panel]');
+      const open = panel.hidden;
+      panel.hidden = !open;
+      globalSearchToggle.setAttribute('aria-expanded',String(open));
+      if (open) $('[data-global-search-input]')?.focus();
+      return;
+    }
     if (themeButton) {
+      closeGlobalSearch();
       const root = document.documentElement; const current = root.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); const next = current === 'dark' ? 'light' : 'dark';
       root.setAttribute('data-theme',next); try { localStorage.setItem('solaris-theme',next); } catch (_) {} return;
     }
-    if (profileButton) { const popover = $('#profile-popover'); if (!popover.hidden) closeProfile(); else { popover.hidden = false; profileButton.setAttribute('aria-expanded','true'); } return; }
+    if (profileButton) { closeGlobalSearch(); const popover = $('#profile-popover'); if (!popover.hidden) closeProfile(); else { popover.hidden = false; profileButton.setAttribute('aria-expanded','true'); } return; }
+    if (postFriendCard) {
+      const friendCard = friendCardFromForm($('#profile-form'));
+      if (!friendCard) return;
+      postFriendCard.disabled = true;
+      try {
+        const result = await api('/api/member-friend-card/post','POST',{friendCard});
+        currentUser = result.user;
+        profilePreview();
+        postFriendCard.textContent = 'Update posted Friend-Card';
+        const status = $('.friend-card-publish-row strong');
+        const description = $('.friend-card-publish-row p:not(.form-message)');
+        if (status) status.textContent = 'Your Friend-Card is posted.';
+        if (description) description.textContent = 'Save profile changes to update your posted card.';
+        setMessage('#friend-card-post-message',result.message,false);
+        await loadMemberProfiles();
+      } catch (error) { setMessage('#friend-card-post-message',error.message); }
+      finally { postFriendCard.disabled = false; }
+      return;
+    }
     if (openFriendCard) {
       const member = memberProfiles.find(item => item.id === openFriendCard.dataset.openFriendCard);
       if (member) {
@@ -793,6 +891,7 @@
       return;
     }
     if (saveRoles) { saveAccountRoles(saveRoles); return; }
+    if (saveViewedRoles) { saveViewedUserRoles(saveViewedRoles); return; }
     if (event.target.closest('[data-logout]')) { logout(); return; }
     if (closeButton) { $('#dlg').close(); return; }
     if (gameButton) { projectDialog(gameButton.dataset.game); return; }
@@ -806,6 +905,7 @@
     if (event.target.closest('[data-edit-account]')) { editingProfile = true; showAccount(); return; }
     if (event.target.closest('[data-cancel-edit]')) { editingProfile = false; showAccount(); return; }
     if (!event.target.closest('.profile-wrap')) closeProfile();
+    if (!event.target.closest('.global-search')) closeGlobalSearch();
     if (!event.target.closest('.top')) { const nav = $('#nav'); nav.classList.remove('open'); $('[data-menu]').setAttribute('aria-expanded','false'); }
   });
   document.addEventListener('submit', async event => {
@@ -900,6 +1000,7 @@
   });
   document.addEventListener('input',event => {
     if (event.target.matches('[data-member-search]')) { updateMemberResults(); return; }
+    if (event.target.matches('[data-global-search-input]')) { updateGlobalSearchResults(); return; }
     if (event.target.matches('[data-friend-search]')) {
       filterFriendCards(event.target.value);
       return;
@@ -928,6 +1029,7 @@
   document.addEventListener('keydown', event => {
     if (event.key !== 'Escape') return;
     closeProfile();
+    closeGlobalSearch();
     const options = $('#profile-options');
     if (options) { options.hidden = true; $('.profile-options-button')?.setAttribute('aria-expanded','false'); }
   });

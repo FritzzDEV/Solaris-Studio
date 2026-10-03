@@ -83,13 +83,16 @@ async function getAccount(req) {
 }
 function publicProfile(account) {
   const { id, profile } = account;
-  return { id, ...profile, accountRole: account.role || 'member' };
+  const friendCard = account.role !== 'owner' && profile.primaryRole === 'member' && profile.friendCard?.published === true
+    ? cleanFriendCard(profile.friendCard)
+    : emptyFriendCard();
+  return { id, ...profile, friendCard, accountRole: account.role || 'member' };
 }
 function privateProfile(account) {
   const ownerUsername = text(process.env.SOLARIS_OWNER_USERNAME || 'Fritzz Xenon', 24);
   const ownerExists = accounts.some(item => item.role === 'owner') || pausedAccounts.some(item => item.account.role === 'owner');
   const canClaimOwner = Boolean(process.env.SOLARIS_OWNER_SETUP_TOKEN && !ownerExists && account.profile.username.toLowerCase() === ownerUsername.toLowerCase());
-  return { ...publicProfile(account), tickets: account.tickets || { namecard: 0, who: 0 }, canClaimOwner };
+  return { ...publicProfile(account), friendCard: cleanFriendCard(account.profile.friendCard), tickets: account.tickets || { namecard: 0, who: 0 }, canClaimOwner };
 }
 function normalizeAccount(account) {
   let changed = false;
@@ -171,7 +174,7 @@ function imageData(value, maxLength = 950_000) {
   return value;
 }
 function emptyFriendCard() {
-  return { likes: '', dislikes: '', favoriteThing: '', lookingFor: '', personalityTags: [], backgroundImage: '', backgroundColor: '#fff8e9', borderStyle: 'solid', borderColor: '#dcae55', borderWidth: 2, buttonColor: '#3c315b', buttonTextColor: '#ffffff', buttonBorderStyle: 'solid', buttonBorderColor: '#3c315b', effect: 'glow' };
+  return { published: false, likes: '', dislikes: '', favoriteThing: '', lookingFor: '', personalityTags: [], backgroundImage: '', backgroundColor: '#fff8e9', borderStyle: 'solid', borderColor: '#dcae55', borderWidth: 2, buttonColor: '#3c315b', buttonTextColor: '#ffffff', buttonBorderStyle: 'solid', buttonBorderColor: '#3c315b', effect: 'glow' };
 }
 function cleanPersonalityTags(value) {
   const source = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
@@ -196,6 +199,7 @@ function cleanFriendCard(value) {
   const buttonBorderStyle = FRIEND_CARD_STROKES.has(input.buttonBorderStyle) ? input.buttonBorderStyle : defaults.buttonBorderStyle;
   const effect = FRIEND_CARD_EFFECTS.has(input.effect) ? input.effect : defaults.effect;
   return {
+    published: input.published === true,
     likes: text(input.likes, 400), dislikes: text(input.dislikes, 400), favoriteThing: text(input.favoriteThing, 160), lookingFor: text(input.lookingFor, 300),
     personalityTags: cleanPersonalityTags(input.personalityTags), backgroundImage: imageData(input.backgroundImage, 400_000),
     backgroundColor: safeColor(input.backgroundColor, defaults.backgroundColor), borderStyle, borderColor: safeColor(input.borderColor, defaults.borderColor), borderWidth,
@@ -226,6 +230,8 @@ function cleanProfile(input, existing = {}, allowMemberFriendCard = true) {
   const socials = validateSocials(input.socials);
   const favorites = ['game', 'developer', 'artwork'].map(type => validateFavorite(input.favorites && input.favorites[type], type)).filter(Boolean);
   const installedGames = Array.isArray(input.installedGames) ? [...new Set(input.installedGames.map(value => text(value, 80)).filter(Boolean))].slice(0, 20) : [];
+  const friendCard = allowMemberFriendCard ? cleanFriendCard(input.friendCard) : emptyFriendCard();
+  friendCard.published = allowMemberFriendCard && existing.friendCard?.published === true;
   return {
     username: text(input.username, 24) || existing.username || '',
     usernameLastChangedAt: Number(existing.usernameLastChangedAt) || Date.now(),
@@ -241,7 +247,7 @@ function cleanProfile(input, existing = {}, allowMemberFriendCard = true) {
     socials,
     likes: text(input.likes, 400),
     dislikes: text(input.dislikes, 400),
-    friendCard: allowMemberFriendCard ? cleanFriendCard(input.friendCard) : emptyFriendCard(),
+    friendCard,
     favorites: Object.fromEntries(['game', 'developer', 'artwork'].map(type => [type, favorites.find(item => item.type === type) || null])),
     installedGames
   };
@@ -299,9 +305,22 @@ async function handleApi(req, res, pathname) {
       id: account.id,
       username: account.profile.username,
       avatarImage: account.profile.avatarImage,
-      friendCard: cleanFriendCard(account.profile.friendCard)
+      friendCard: account.profile.friendCard?.published === true ? cleanFriendCard(account.profile.friendCard) : null
     }));
     return send(res, 200, { members });
+  }
+  if (req.method === 'POST' && pathname === '/api/member-friend-card/post') {
+    const account = await getAccount(req);
+    if (!account) return send(res, 401, { error: 'Log in to post your Friend-Card.' });
+    if (account.role === 'owner' || account.profile.primaryRole !== 'member') return send(res, 403, { error: 'Only Member accounts can post a Member Friend-Card.' });
+    const input = await readBody(req);
+    const previousFriendCard = account.profile.friendCard;
+    const friendCard = cleanFriendCard(input.friendCard);
+    friendCard.published = true;
+    account.profile.friendCard = friendCard;
+    try { await saveAccounts(); }
+    catch (error) { account.profile.friendCard = previousFriendCard; throw error; }
+    return send(res, 200, { user: privateProfile(account), message: 'Your Friend-Card is posted on the Members page.' });
   }
   if (req.method === 'GET' && pathname === '/api/admin/accounts') {
     const owner = await getAccount(req);
