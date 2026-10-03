@@ -319,7 +319,7 @@
       const mode = params.get('mode') || 'signup';
       app.innerHTML = authView(mode === 'login' ? 'login' : 'signup');
     } else {
-      app.innerHTML = editingProfile ? profileEditor(currentUser) : profileDashboard(currentUser);
+      app.innerHTML = editingProfile ? profileEditor(currentUser) : profileDashboard(currentUser,true);
       if (!editingProfile && currentUser.accountRole === 'owner') loadOwnerAccounts();
     }
   }
