@@ -17,22 +17,25 @@
       { id:'gamma-frost-banner', title:'Gamma Frost Banner', image:'assets/gamma-frost-banner.webp', shape:'banner', type:'Game banner', projectId:'gamma-frost', mainTag:'From Gamma Frost', tags:['AI artwork','No owner','1girl','cute','short','blush','high quality','black hair','medium hair','wavy hair','headband','bridal veil','white crown','white background','open smile','full body','blue eyes','facing viewer','4k','cinematic pose','lying on ground','looking back at viewer'] }
     ]
   };
-  const ROUTES = [['home','Home','index.html'],['list','List','list.html'],['games','Games','games.html'],['updates','Updates','updates.html'],['arts','Arts','arts.html'],['groups','Groups','groups.html'],['download','Download','download.html'],['shop','Shop','shop.html']];
+  const ROUTES = [['home','Home','index.html'],['list','List','list.html'],['members','Members','members.html'],['games','Games','games.html'],['updates','Updates','updates.html'],['arts','Arts','arts.html'],['groups','Groups','groups.html'],['download','Download','download.html'],['shop','Shop','shop.html']];
   const PRIMARY_ROLE_LABELS = {assistant:'Assistant','ai-assistant':'AI Assistant',developer:'Developer',member:'Member',visitor:'Visitor'};
   const PRIMARY_ROLE_EXPLANATIONS = {
     assistant:'Supports studio coordination and helps keep Solaris projects moving.',
     'ai-assistant':'An AI contributor that helps with Solaris Studio work under human direction.',
-    developer:'Builds, tests, or maintains Solaris Studio projects.'
+    developer:'Builds, tests, or maintains Solaris Studio projects.',
+    owner:'Owns Solaris Studio and manages its team roles.'
   };
   const SECONDARY_ROLE_TAGS = ['Scripter','Coder','Modeler','Tester','Updater','Announcer','Debugger','App tester','Artist'];
+  const EMPTY_FRIEND_CARD = {likes:'',dislikes:'',favoriteThing:'',lookingFor:'',personalityTags:[],backgroundImage:'',backgroundColor:'#fff8e9',borderStyle:'solid',borderColor:'#dcae55',borderWidth:2,buttonColor:'#3c315b',buttonTextColor:'#ffffff',buttonBorderStyle:'solid',buttonBorderColor:'#3c315b',effect:'glow'};
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   const paragraphs = value => String(value || '').split(/\n\s*\n/).map(part => part.trim()).filter(Boolean).map(part => `<p>${esc(part)}</p>`).join('');
   const app = $('#app');
   const page = document.body.dataset.page || 'home';
-  const titles = {home:'',list:'List',games:'Games',updates:'Updates',account:'Profile',arts:'Arts',groups:'Groups',download:'Download',shop:'Shop',project:'Project',artwork:'Artwork'};
+  const titles = {home:'',list:'List',members:'Members',games:'Games',updates:'Updates',account:'Profile',arts:'Arts',groups:'Groups',download:'Download',shop:'Shop',project:'Project',artwork:'Artwork'};
   let currentUser = null;
+  let memberProfiles = [];
   let isGuest = new URLSearchParams(location.search).get('guest') === '1';
   try {
     isGuest = isGuest || sessionStorage.getItem('solaris-guest') === '1';
@@ -108,6 +111,105 @@
       if (page === 'list' && container) { container.innerHTML = ''; setMessage('#member-load-message','Team profiles could not be loaded. Please refresh the page.'); }
     }
   }
+  function normalizedFriendCard(value) {
+    return {...EMPTY_FRIEND_CARD,...(value && typeof value === 'object' ? value : {}),personalityTags:Array.isArray(value?.personalityTags) ? value.personalityTags : []};
+  }
+  function friendCardStyle(card) {
+    return `--friend-bg:${esc(card.backgroundColor)};--friend-stroke:${esc(card.borderColor)};--friend-stroke-style:${esc(card.borderStyle)};--friend-stroke-width:${Number(card.borderWidth) || 2}px;--friend-button-bg:${esc(card.buttonColor)};--friend-button-text:${esc(card.buttonTextColor)};--friend-button-stroke:${esc(card.buttonBorderColor)};--friend-button-stroke-style:${esc(card.buttonBorderStyle)}`;
+  }
+  function friendCardMarkup(member, full = false, editor = false) {
+    const card = normalizedFriendCard(member.friendCard);
+    const effect = ['none','glow','lift','shine'].includes(card.effect) ? card.effect : 'glow';
+    const image = card.backgroundImage ? `background-image:linear-gradient(135deg,#ffffffba,#fff9e1b8),url(&quot;${esc(card.backgroundImage)}&quot;)` : '';
+    const title = esc(member.username || 'Solaris Member');
+    const tags = card.personalityTags.map(tag => `<span class="friend-personality-tag">${esc(tag)}</span>`).join('');
+    const details = [
+      ['What I like',card.likes],['What I dislike',card.dislikes],['My favorite thing',card.favoriteThing],['The kind of friend I’m looking for',card.lookingFor]
+    ].map(([label,value]) => `<section class="friend-detail"><h3>${label}</h3><p>${esc(value || 'Not added yet.')}</p></section>`).join('');
+    const searchData = !full && !editor ? esc([member.username,card.likes,card.dislikes,card.favoriteThing,card.lookingFor,...card.personalityTags].join(' ')) : '';
+    return `<article class="friend-card friend-card-effect-${effect}${full ? ' friend-card-full' : ' friend-card-preview'}"${!full && !editor ? ` data-friend-member data-friend-search="${searchData}"` : ''} style="${friendCardStyle(card)};${image}" aria-label="${title} Friend-Card">
+      <div class="friend-card-top">${avatar(member.username,'friend-card-avatar',member.avatarImage)}<div class="friend-card-name"><span class="section-eyebrow">SOLARIS MEMBER</span><h2>${title}</h2></div>${!full ? '<span class="friend-card-sun" aria-hidden="true">✦</span>' : ''}</div>
+      ${full ? `<div class="friend-card-details">${details}</div>` : `<p class="friend-card-teaser">${esc(card.likes || card.favoriteThing || 'A little introduction is coming soon.')}</p>${card.favoriteThing ? `<p class="friend-card-favorite"><span>Favorite thing</span><strong>${esc(card.favoriteThing)}</strong></p>` : ''}`}
+      ${tags ? `<div class="friend-personality-list" aria-label="Personality tags">${full ? tags : card.personalityTags.slice(0,4).map(tag => `<span class="friend-personality-tag">${esc(tag)}</span>`).join('')}${!full && card.personalityTags.length > 4 ? `<span class="friend-personality-more">+${card.personalityTags.length - 4}</span>` : ''}</div>` : !full ? '' : '<p class="friend-card-empty-tags">No personality tags added yet.</p>'}
+      ${full ? `<button class="friend-card-open friend-card-custom-button" type="button" data-copy-member-link="${esc(member.id || '')}" style="--friend-button-bg:${esc(card.buttonColor)};--friend-button-text:${esc(card.buttonTextColor)};--friend-button-stroke:${esc(card.buttonBorderColor)};--friend-button-stroke-style:${esc(card.buttonBorderStyle)}">Copy profile link</button>` : `<button class="friend-card-open" type="button"${editor ? ' disabled' : ` data-open-friend-card="${esc(member.id || '')}"`} style="--friend-button-bg:${esc(card.buttonColor)};--friend-button-text:${esc(card.buttonTextColor)};--friend-button-stroke:${esc(card.buttonBorderColor)};--friend-button-stroke-style:${esc(card.buttonBorderStyle)}">Open Friend-Card</button>`}
+    </article>`;
+  }
+  function friendCardEditorSection(user) {
+    if (user.accountRole === 'owner' || user.primaryRole !== 'member') return '';
+    const card = normalizedFriendCard(user.friendCard);
+    const imagePreview = card.backgroundImage ? `<span class="friend-card-image-thumb" id="friend-card-image-thumb" style="background-image:url(&quot;${esc(card.backgroundImage)}&quot;)"></span>` : '<span class="friend-card-image-thumb friend-card-image-empty" id="friend-card-image-thumb">No image selected</span>';
+    const options = (values, selected, labels = values) => values.map((value,index) => `<option value="${esc(value)}"${value === selected ? ' selected' : ''}>${esc(labels[index] || value)}</option>`).join('');
+    return `<section class="account-panel account-panel-wide friend-card-editor"><div class="panel-heading"><div><h2>Your Friend-Card</h2><p>Build a custom introduction for the Members page. Upload your own image and choose its colors, border, button look, and effect.</p></div></div>
+      <div class="friend-card-editor-layout"><div class="friend-card-editor-fields">
+        <label>What I like<textarea name="friendCardLikes" rows="3" maxlength="400" placeholder="Games, hobbies, music…">${esc(card.likes)}</textarea></label>
+        <label>What I dislike<textarea name="friendCardDislikes" rows="3" maxlength="400" placeholder="Things you prefer to avoid…">${esc(card.dislikes)}</textarea></label>
+        <label>My favorite thing<input name="friendCardFavoriteThing" maxlength="160" value="${esc(card.favoriteThing)}" placeholder="A favorite game, hobby, or topic"></label>
+        <label>What kind of friend I’m looking for<textarea name="friendCardLookingFor" rows="3" maxlength="300" placeholder="Describe the kind of friend you hope to meet…">${esc(card.lookingFor)}</textarea></label>
+        <label>Personality tags<input name="friendCardPersonalityTags" maxlength="580" value="${esc(card.personalityTags.join(', '))}" placeholder="Funny, cool, dependable, lazy…"><small>Separate tags with commas. Add up to 20.</small></label>
+        <div class="friend-card-asset-row"><div><strong>Friend-Card background image</strong><small>Upload your own JPG, PNG, or WebP image. It is resized before saving.</small></div>${imagePreview}<input type="file" accept="image/png,image/jpeg,image/webp" data-friend-card-image hidden><input type="hidden" name="friendCardBackgroundImage" value="${esc(card.backgroundImage)}"><div class="friend-card-asset-actions"><button class="btn btn-ghost btn-sm" type="button" data-choose-friend-card-image>Choose image</button><button class="btn btn-ghost btn-sm" type="button" data-remove-friend-card-image${card.backgroundImage ? '' : ' hidden'}>Remove</button></div></div>
+        <div class="friend-design-grid"><label>Card background<input type="color" name="friendCardBackgroundColor" value="${esc(card.backgroundColor)}"></label><label>Card stroke<input type="color" name="friendCardBorderColor" value="${esc(card.borderColor)}"></label><label>Stroke design<select name="friendCardBorderStyle">${options(['solid','dashed','dotted','double','groove','ridge'],card.borderStyle,['Solid','Dashed','Dotted','Double','Groove','Ridge'])}</select></label><label>Stroke width<select name="friendCardBorderWidth">${options(['1','2','3','4','5','6','7','8'],String(card.borderWidth),['1 px','2 px','3 px','4 px','5 px','6 px','7 px','8 px'])}</select></label><label>Card effect<select name="friendCardEffect">${options(['none','glow','lift','shine'],card.effect,['None','Soft glow','Lift on hover','Shine'])}</select></label></div>
+        <div class="friend-design-grid friend-button-design"><h3>Open Friend-Card button</h3><label>Button background<input type="color" name="friendCardButtonColor" value="${esc(card.buttonColor)}"></label><label>Button text<input type="color" name="friendCardButtonTextColor" value="${esc(card.buttonTextColor)}"></label><label>Button stroke<input type="color" name="friendCardButtonBorderColor" value="${esc(card.buttonBorderColor)}"></label><label>Button stroke design<select name="friendCardButtonBorderStyle">${options(['solid','dashed','dotted','double','groove','ridge'],card.buttonBorderStyle,['Solid','Dashed','Dotted','Double','Groove','Ridge'])}</select></label></div>
+      </div><div class="friend-card-editor-preview"><span class="section-eyebrow">LIVE PREVIEW</span><div id="friend-card-live-preview">${friendCardMarkup({...user,friendCard:card},false,true)}</div></div></div></section>`;
+  }
+  function friendCardFromForm(form) {
+    if (!form?.elements.friendCardLikes) return null;
+    const get = name => form.elements[name]?.value?.trim() || '';
+    return {
+      likes:get('friendCardLikes'),dislikes:get('friendCardDislikes'),favoriteThing:get('friendCardFavoriteThing'),lookingFor:get('friendCardLookingFor'),personalityTags:get('friendCardPersonalityTags').split(',').map(item => item.trim()).filter(Boolean),backgroundImage:get('friendCardBackgroundImage'),backgroundColor:get('friendCardBackgroundColor'),borderStyle:get('friendCardBorderStyle'),borderColor:get('friendCardBorderColor'),borderWidth:Number(get('friendCardBorderWidth')),
+      buttonColor:get('friendCardButtonColor'),buttonTextColor:get('friendCardButtonTextColor'),buttonBorderStyle:get('friendCardButtonBorderStyle'),buttonBorderColor:get('friendCardButtonBorderColor'),effect:get('friendCardEffect')
+    };
+  }
+  function updateFriendCardEditorPreview() {
+    const form = $('#profile-form');
+    const preview = $('#friend-card-live-preview');
+    const card = friendCardFromForm(form);
+    if (preview && card && currentUser) preview.innerHTML = friendCardMarkup({...currentUser,friendCard:card},false,true);
+  }
+  async function compressFriendCardImage(file) {
+    if (!file || !/^image\/(?:jpeg|png|webp)$/.test(file.type)) throw new Error('Choose a JPG, PNG, or WebP image.');
+    if (file.size > 12 * 1024 * 1024) throw new Error('Choose an image smaller than 12 MB.');
+    if (typeof createImageBitmap !== 'function') throw new Error('Image editing is not supported in this browser.');
+    const bitmap = await createImageBitmap(file);
+    try {
+      for (const scale of [1,.82,.66,.5,.38]) {
+        const factor = Math.min(scale,1400/bitmap.width,1000/bitmap.height);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1,Math.round(bitmap.width*factor));
+        canvas.height = Math.max(1,Math.round(bitmap.height*factor));
+        const context = canvas.getContext('2d');
+        if (!context) break;
+        context.drawImage(bitmap,0,0,canvas.width,canvas.height);
+        for (const quality of [.82,.68,.54,.42]) {
+          const data = canvas.toDataURL('image/webp',quality);
+          if (data.length <= 390_000 && /^data:image\/(?:webp|jpeg|png);base64,/.test(data)) return data;
+        }
+      }
+    } finally { bitmap.close?.(); }
+    throw new Error('This image could not be resized enough. Try a smaller image.');
+  }
+  async function loadMemberProfiles() {
+    const grid = $('#member-card-grid');
+    if (!grid) return;
+    try {
+      const result = await api('/api/members');
+      memberProfiles = result.members || [];
+      grid.innerHTML = memberProfiles.map(member => friendCardMarkup(member)).join('');
+      filterFriendCards($('[data-friend-search]')?.value || '');
+    } catch (error) {
+      grid.innerHTML = '';
+      setMessage('#member-card-message',error.message || 'Member cards could not be loaded. Please refresh the page.');
+    }
+  }
+  function filterFriendCards(value) {
+    const query = String(value || '').trim().toLowerCase();
+    let shown = 0;
+    $$('[data-friend-member]').forEach(card => { card.hidden = !card.dataset.friendSearch.toLowerCase().includes(query); if (!card.hidden) shown++; });
+    const empty = $('#member-card-empty');
+    if (empty) {
+      empty.hidden = shown > 0;
+      empty.textContent = memberProfiles.length ? 'No Member accounts match that search.' : 'No Member accounts yet. When someone joins with the Member role, their Friend-Card will appear here.';
+    }
+  }
   function favoriteCard(type, item) {
     if (!item?.title) return '';
     const game = type === 'game' ? gameByName(item.title) : null;
@@ -175,6 +277,9 @@
         <section class="member-directory" aria-label="Search and filter members"><label class="member-search-wrap"><span class="visually-hidden">Search by member, role, or project</span><span class="member-search-icon" aria-hidden="true">⌕</span><input id="member-search" type="search" data-member-search placeholder="Search members, roles, or games…" autocomplete="off"></label>
         <div class="member-filter-bar" role="group" aria-label="Filter members by role or project"><button class="member-filter-chip" type="button" data-member-filter="All" aria-pressed="true">All</button>${memberFilterOptions.map(tag => `<button class="member-filter-chip" type="button" data-member-filter="${esc(tag)}" aria-pressed="false">${esc(tag)}</button>`).join('')}</div></section>
         <div class="members" id="member-results"></div><p class="empty member-empty" id="member-no-results">Studio team profiles appear here when the Owner assigns Assistant, AI Assistant, or Developer roles.</p><p class="form-message" id="member-load-message" role="status"></p><div class="page-end"></div></div>`;
+    },
+    members() {
+      return `<div class="wrap"><div class="page-head"><span class="section-eyebrow">MEET THE COMMUNITY</span><h1>Members</h1><p>Member accounts make a Friend-Card in their own style. Studio roles have their own profiles on the List page.</p></div><section class="member-directory friend-directory" aria-label="Search member Friend-Cards"><label class="member-search-wrap"><span class="visually-hidden">Search member Friend-Cards</span><span class="member-search-icon" aria-hidden="true">⌕</span><input type="search" data-friend-search placeholder="Search members…" autocomplete="off"></label></section><div class="friend-card-grid" id="member-card-grid"></div><p class="empty member-empty" id="member-card-empty">No Member accounts yet. When someone joins with the Member role, their Friend-Card will appear here.</p><p class="form-message" id="member-card-message" role="status"></p><div class="page-end"></div></div>`;
     },
     games() { return `<div class="wrap"><div class="page-head"><h1>Games</h1><p>Solaris Studio is new, with one game in development and one planned for the future.</p></div><div class="grid">${DATA.games.map(projectCard).join('')}</div><div class="page-end"></div></div>`; },
     updates() { return `<div class="wrap"><div class="page-head"><h1>Updates</h1><p>News and development updates from Solaris Studio.</p></div><article class="update-card"><span class="section-eyebrow">DEVELOPMENT NOTE</span><h2>Gamma Frost production is slow</h2><p>Gamma Frost production is moving slowly because I’m currently the only person working on it. That means I can’t build every part of the game at once, so development will take time.</p><p>When Gamma Frost reaches early access, it will not yet be an MMORPG. The game will begin in a more limited form, and its larger online world will take longer to build. Thank you for your patience while I keep working on it.</p></article><div class="page-end"></div></div>`; },
@@ -271,7 +376,7 @@
     return rows.map(item => `<div class="social-editor-row"><label>Account name<input name="social-label" maxlength="30" placeholder="Instagram, Discord, website…" value="${esc(item.label || '')}"></label><label>Profile link<input name="social-url" type="url" maxlength="240" placeholder="https://…" value="${esc(item.url || '')}"></label><button class="icon-btn social-remove" type="button" data-remove-social aria-label="Remove social account">Remove</button></div>`).join('');
   }
   function ownerTeamManager() {
-    return `<section class="account-panel account-panel-wide owner-team-manager"><div class="panel-heading"><div><h2>Assign account roles</h2><p>Choose each registered account’s primary role and add comma-separated role tags. Visitor is reserved for guests.</p></div></div><p class="form-message" id="team-admin-message" role="status"></p><div class="team-admin-list" id="team-admin-list"><p class="empty-inline">Loading accounts…</p></div></section>`;
+    return `<section class="account-panel account-panel-wide owner-team-manager"><div class="panel-heading"><div><h2>Assign account roles</h2><p>Choose each account’s primary role. Member accounts get a Friend-Card; studio role tags are for staff roles. Visitor is reserved for guests.</p></div></div><p class="form-message" id="team-admin-message" role="status"></p><div class="team-admin-list" id="team-admin-list"><p class="empty-inline">Loading accounts…</p></div></section>`;
   }
   async function loadOwnerAccounts() {
     const list = $('#team-admin-list');
@@ -279,9 +384,10 @@
     try {
       const result = await api('/api/admin/accounts');
       list.innerHTML = result.accounts.length ? result.accounts.map(account => {
-        if (account.accountRole === 'owner') return `<div class="team-admin-row team-admin-owner-row"><span><strong>${esc(account.username)}</strong><small>Owner permission</small></span><strong class="profile-role-chip">Owner</strong></div>`;
+        if (account.accountRole === 'owner') return `<div class="team-admin-row team-role-row team-role-row-owner" data-role-row data-account-id="${esc(account.id)}"><span class="team-admin-identity"><strong>${esc(account.username)}</strong><small>Owner permission</small></span><strong class="profile-role-chip">Owner</strong><input type="hidden" data-primary-role value="owner"><label>Secondary role tags<input data-secondary-roles maxlength="640" value="${esc((account.secondaryRoles || []).join(', '))}" placeholder="Coder, Modeler, Tester…"></label><button class="btn btn-ghost btn-sm" type="button" data-save-account-roles>Save roles</button></div>`;
         const roleOptions = Object.entries(PRIMARY_ROLE_LABELS).map(([value,label]) => `<option value="${value}"${account.primaryRole === value ? ' selected' : ''}${value === 'visitor' ? ' disabled' : ''}>${esc(label)}${value === 'visitor' ? ' · guest only' : ''}</option>`).join('');
-        return `<div class="team-admin-row team-role-row" data-role-row data-account-id="${esc(account.id)}"><span class="team-admin-identity"><strong>${esc(account.username)}</strong><small>Registered account</small></span><label>Primary role<select data-primary-role aria-label="Primary role for ${esc(account.username)}">${roleOptions}</select></label><label>Secondary role tags<input data-secondary-roles maxlength="640" value="${esc((account.secondaryRoles || []).join(', '))}" placeholder="Scripter, Modeler, Tester…"></label><button class="btn btn-ghost btn-sm" type="button" data-save-account-roles>Save roles</button></div>`;
+        const isMember = account.primaryRole === 'member';
+        return `<div class="team-admin-row team-role-row" data-role-row data-account-id="${esc(account.id)}"><span class="team-admin-identity"><strong>${esc(account.username)}</strong><small>Registered account</small></span><label>Primary role<select data-primary-role aria-label="Primary role for ${esc(account.username)}">${roleOptions}</select></label><label>Secondary role tags<input data-secondary-roles maxlength="640" value="${esc((account.secondaryRoles || []).join(', '))}" placeholder="Scripter, Modeler, Tester…"${isMember ? ' disabled' : ''}></label><button class="btn btn-ghost btn-sm" type="button" data-save-account-roles>Save roles</button></div>`;
       }).join('') : '<p class="empty-inline">No accounts have signed up yet.</p>';
     } catch (error) {
       setMessage('#team-admin-message',error.message);
@@ -293,13 +399,18 @@
     if (!row) return;
     button.disabled = true;
     try {
-      await api('/api/admin/account-roles','PUT',{
+      const result = await api('/api/admin/account-roles','PUT',{
         accountId:row.dataset.accountId,
         primaryRole:$('[data-primary-role]',row).value,
         secondaryRoles:$('[data-secondary-roles]',row).value
       });
+      if (currentUser?.id === result.account.id) currentUser.secondaryRoles = result.account.secondaryRoles;
       setMessage('#team-admin-message','Account roles saved.',false);
       await Promise.all([loadOwnerAccounts(),loadTeamMembers()]);
+      if (currentUser?.id === result.account.id) {
+        showAccount();
+        setMessage('#team-admin-message','Account roles saved.',false);
+      }
     } catch (error) { setMessage('#team-admin-message',error.message); }
     finally { button.disabled = false; }
   }
@@ -316,8 +427,8 @@
     const roleLabel = user.accountRole === 'owner' ? 'Solaris Owner' : (PRIMARY_ROLE_LABELS[user.primaryRole] || 'Member');
     const profileOptions = isOwn ? `<div class="profile-options-wrap"><button class="profile-options-button" type="button" data-profile-options aria-label="Profile options" aria-expanded="false" aria-controls="profile-options">⋮</button><div class="profile-options-menu" id="profile-options" hidden><button type="button" data-edit-account>Edit Profile</button></div></div>` : '';
     const admin = isOwn && user.accountRole === 'owner' ? ownerTeamManager() : '';
-    const roleKey = user.primaryRole;
-    const profileRoles = ['assistant','ai-assistant','developer'].includes(roleKey) ? `<section class="account-panel account-panel-wide profile-roles-panel"><h2>Roles</h2><div class="member-tags"><span class="tag member-tag">${esc(PRIMARY_ROLE_LABELS[roleKey])}</span>${(user.secondaryRoles || []).map(tag => `<span class="tag member-tag">${esc(tag)}</span>`).join('')}</div><p>${esc(PRIMARY_ROLE_EXPLANATIONS[roleKey])}</p></section>` : '';
+    const roleKey = user.accountRole === 'owner' ? 'owner' : user.primaryRole;
+    const profileRoles = ['owner','assistant','ai-assistant','developer'].includes(roleKey) ? `<section class="account-panel account-panel-wide profile-roles-panel"><h2>Roles</h2><div class="member-tags"><span class="tag member-tag">${roleKey === 'owner' ? 'Owner' : esc(PRIMARY_ROLE_LABELS[roleKey])}</span>${(user.secondaryRoles || []).map(tag => `<span class="tag member-tag">${esc(tag)}</span>`).join('')}</div><p>${esc(PRIMARY_ROLE_EXPLANATIONS[roleKey])}</p></section>` : '';
     const ownerClaim = isOwn && user.canClaimOwner ? `<section class="account-panel account-panel-wide owner-claim-panel"><span class="section-eyebrow">STUDIO SETUP</span><h2>Claim the Solaris Owner role</h2><p>Your signed-in username is reserved for the Owner account. Enter the one-time setup code configured on the Solaris server to manage registered account roles.</p><form id="owner-claim-form"><label>Owner setup code<input name="ownerSetupCode" type="password" maxlength="200" autocomplete="off" required></label><p class="form-message" id="owner-claim-message" role="status"></p><button class="btn btn-primary" type="submit">Claim Owner role</button></form></section>` : '';
     return `<div class="wrap account-wrap">
       <section class="account-hero"><div class="account-banner ${bannerRatioClass(user.bannerRatio)}">${bannerImage(user.bannerImage)}</div>
@@ -335,6 +446,7 @@
     const socials = socialRowsMarkup(user.socials);
     const favs = favoritesFor(user);
     const ticketCounts = user.tickets || { namecard: 0, who: 0 };
+    const memberFriendCard = friendCardEditorSection(user);
     const namecardOption = ticketCounts.namecard > 0 ? `<label class="ticket-choice"><input type="checkbox" name="useNamecardTicket"><span>Use a Namecard ticket (${ticketCounts.namecard} available)</span></label>` : `<p class="panel-help">Namecard tickets in your inventory: ${ticketCounts.namecard || 0}. <a class="text-link" href="shop.html">Get one in the Shop</a>.</p>`;
     const realNameNotice = user.realName ? (ticketCounts.who > 0 ? `<p class="panel-help">Your saved real name is permanent unless you use a WHO? ticket (${ticketCounts.who} available).</p><label class="ticket-choice"><input type="checkbox" name="useWhoTicket"><span>Use a WHO? ticket for this change</span></label>` : `<p class="panel-help">Your saved real name is permanent. <a class="text-link" href="shop.html">Get a WHO? ticket in the Shop</a> if you need to change it.</p>`) : '<p class="real-name-warning">Warning: the first real name you save becomes permanent. To change it later, you will need a WHO? ticket from the Shop.</p>';
     return `<div class="wrap account-wrap"><div class="page-head"><h1>Edit profile</h1><p>Choose what to share on your Solaris profile. Only your username is required for your account.</p></div>
@@ -352,6 +464,7 @@
           <section class="account-panel account-panel-wide"><h2>Favorites</h2><p class="panel-help">Add an optional comment to each favorite.</p><div class="favorite-editor-grid">
             <div class="favorite-editor-item">${favoriteControl('game',favs.game)}</div><div class="favorite-editor-item">${favoriteControl('developer',favs.developer)}</div><div class="favorite-editor-item">${favoriteControl('artwork',favs.artwork)}</div></div></section>
           <section class="account-panel account-panel-wide"><h2>Installed games</h2><p class="panel-help">List the Solaris games you have installed, separated by commas. You can leave this blank.</p><label class="visually-hidden" for="installed-games">Installed Solaris games</label><input id="installed-games" name="installedGames" maxlength="500" value="${esc((user.installedGames || []).join(', '))}" placeholder="e.g. Gamma Frost"></section>
+          ${memberFriendCard}
         </div><p class="form-message" id="profile-message" role="status"></p><div class="actions editor-actions"><button class="btn btn-primary" type="submit">Save profile</button><button class="btn btn-ghost" type="button" data-cancel-edit>Cancel</button></div>
       </form></div>`;
   }
@@ -413,7 +526,8 @@
       if (title) favorites[type] = {title,comment:get(`favorite-${type}-comment`)};
     }
     const installedGames = get('installedGames').split(',').map(item => item.trim()).filter(Boolean);
-    return {username:get('username'),realName:get('realName'),pronouns:get('pronouns'),bio:get('bio'),notes:get('notes'),avatarImage:get('avatarImage'),bannerImage:get('bannerImage'),bannerRatio:get('bannerRatio'),likes:get('likes'),dislikes:get('dislikes'),socials,favorites,installedGames,useNamecardTicket:form.elements.useNamecardTicket?.checked === true,useWhoTicket:form.elements.useWhoTicket?.checked === true};
+    const friendCard = friendCardFromForm(form);
+    return {username:get('username'),realName:get('realName'),pronouns:get('pronouns'),bio:get('bio'),notes:get('notes'),avatarImage:get('avatarImage'),bannerImage:get('bannerImage'),bannerRatio:get('bannerRatio'),likes:get('likes'),dislikes:get('dislikes'),socials,favorites,installedGames,friendCard,useNamecardTicket:form.elements.useNamecardTicket?.checked === true,useWhoTicket:form.elements.useWhoTicket?.checked === true};
   }
   function ensureCropDialog() {
     if (cropDialog) return cropDialog;
@@ -554,6 +668,7 @@
   profilePreview();
   try { const theme = localStorage.getItem('solaris-theme'); if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-theme',theme); } catch (_) {}
   loadTeamMembers();
+  loadMemberProfiles();
   api('/api/me').then(result => {
     currentUser = result.user;
     if (currentUser) leaveGuestMode();
@@ -566,7 +681,7 @@
     if (page === 'account') app.innerHTML = isGuest && !new URLSearchParams(location.search).has('mode') ? guestDashboard() : authView('signup','Could not reach the account server. Start the site with node server.js and reload.');
   });
 
-  document.addEventListener('click', event => {
+  document.addEventListener('click', async event => {
     const menuButton = event.target.closest('[data-menu]');
     const themeButton = event.target.closest('[data-theme-toggle]');
     const profileButton = event.target.closest('#profile-button');
@@ -578,6 +693,11 @@
     const saveRoles = event.target.closest('[data-save-account-roles]');
     const addSocial = event.target.closest('[data-add-social]');
     const removeSocial = event.target.closest('[data-remove-social]');
+    const openFriendCard = event.target.closest('[data-open-friend-card]');
+    const closeFriendCard = event.target.closest('[data-close-friend-card]');
+    const copyMemberLink = event.target.closest('[data-copy-member-link]');
+    const chooseFriendCardImage = event.target.closest('[data-choose-friend-card-image]');
+    const removeFriendCardImage = event.target.closest('[data-remove-friend-card-image]');
     const profileOptions = event.target.closest('[data-profile-options]');
     const accountAction = event.target.closest('[data-account-action]');
     const cancelDanger = event.target.closest('[data-cancel-danger]');
@@ -593,6 +713,31 @@
       root.setAttribute('data-theme',next); try { localStorage.setItem('solaris-theme',next); } catch (_) {} return;
     }
     if (profileButton) { const popover = $('#profile-popover'); if (!popover.hidden) closeProfile(); else { popover.hidden = false; profileButton.setAttribute('aria-expanded','true'); } return; }
+    if (openFriendCard) {
+      const member = memberProfiles.find(item => item.id === openFriendCard.dataset.openFriendCard);
+      if (member) {
+        $('#friend-card-dialog-content').innerHTML = friendCardMarkup(member,true);
+        $('#friend-card-dialog').showModal();
+      }
+      return;
+    }
+    if (closeFriendCard) { $('#friend-card-dialog')?.close(); return; }
+    if (copyMemberLink) {
+      const url = new URL(`account.html?user=${encodeURIComponent(copyMemberLink.dataset.copyMemberLink)}`,location.href).href;
+      try { await navigator.clipboard.writeText(url); toast('Profile link copied.'); }
+      catch (_) { window.prompt('Copy this profile link:',url); }
+      return;
+    }
+    if (chooseFriendCardImage) { $('[data-friend-card-image]')?.click(); return; }
+    if (removeFriendCardImage) {
+      const form = $('#profile-form');
+      if (form?.elements.friendCardBackgroundImage) form.elements.friendCardBackgroundImage.value = '';
+      const thumb = $('#friend-card-image-thumb');
+      if (thumb) { thumb.className = 'friend-card-image-thumb friend-card-image-empty'; thumb.style.backgroundImage = ''; thumb.textContent = 'No image selected'; }
+      removeFriendCardImage.hidden = true;
+      updateFriendCardEditorPreview();
+      return;
+    }
     const noteToggle = event.target.closest('[data-note-toggle]');
     if (noteToggle) {
       const bubble = noteToggle.nextElementSibling;
@@ -713,6 +858,33 @@
     }
   });
   document.addEventListener('change', async event => {
+    const roleSelect = event.target.closest('select[data-primary-role]');
+    if (roleSelect) {
+      const row = roleSelect.closest('[data-role-row]');
+      const secondaryRoles = row?.querySelector('[data-secondary-roles]');
+      if (secondaryRoles) {
+        secondaryRoles.disabled = roleSelect.value === 'member';
+        if (secondaryRoles.disabled) secondaryRoles.value = '';
+      }
+      return;
+    }
+    if (event.target.closest('#profile-form') && event.target.name?.startsWith('friendCard')) { updateFriendCardEditorPreview(); return; }
+    const friendImage = event.target.closest('[data-friend-card-image]');
+    if (friendImage && currentUser) {
+      const file = friendImage.files?.[0];
+      friendImage.value = '';
+      if (!file) return;
+      try {
+        const data = await compressFriendCardImage(file);
+        const form = $('#profile-form');
+        form.elements.friendCardBackgroundImage.value = data;
+        const thumb = $('#friend-card-image-thumb');
+        if (thumb) { thumb.className = 'friend-card-image-thumb'; thumb.style.backgroundImage = `url("${data}")`; thumb.textContent = ''; }
+        $('[data-remove-friend-card-image]').hidden = false;
+        updateFriendCardEditorPreview();
+      } catch (error) { toast(error.message); }
+      return;
+    }
     const input = event.target.closest('[data-image-input]');
     if (!input || !currentUser) return;
     const form = $('#profile-form');
@@ -728,6 +900,11 @@
   });
   document.addEventListener('input',event => {
     if (event.target.matches('[data-member-search]')) { updateMemberResults(); return; }
+    if (event.target.matches('[data-friend-search]')) {
+      filterFriendCards(event.target.value);
+      return;
+    }
+    if (event.target.closest('#profile-form') && event.target.name?.startsWith('friendCard')) { updateFriendCardEditorPreview(); return; }
     if (event.target.matches('[data-project-search]')) {
       const query = event.target.value.trim().toLowerCase();
       let shown = 0;
@@ -755,4 +932,5 @@
     if (options) { options.hidden = true; $('.profile-options-button')?.setAttribute('aria-expanded','false'); }
   });
   $('#dlg').addEventListener('click', event => { if (event.target === $('#dlg')) $('#dlg').close(); });
+  $('#friend-card-dialog')?.addEventListener('click', event => { if (event.target === $('#friend-card-dialog')) $('#friend-card-dialog').close(); });
 })();

@@ -654,6 +654,64 @@ dialog::backdrop{background:var(--backdrop)}
 .shop-ticket-count strong{color:var(--ink)}
 @media(max-width:600px){.shop-ticket-card{align-items:flex-start;flex-wrap:wrap}.shop-ticket-card>.btn,.shop-ticket-card>a{width:100%;margin-left:0}}
 
+/* Member Friend-Cards */
+.friend-directory{margin:0 0 1.4rem}
+.friend-card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,285px),1fr));gap:1rem;align-items:stretch}
+.friend-card{--friend-bg:#fff8e9;--friend-stroke:#dcae55;--friend-stroke-style:solid;--friend-stroke-width:2px;position:relative;display:flex;flex-direction:column;gap:1rem;min-width:0;padding:1.25rem;border:var(--friend-stroke-width) var(--friend-stroke-style) var(--friend-stroke);border-radius:22px;background-color:var(--friend-bg);background-position:center;background-size:cover;color:var(--ink);box-shadow:0 14px 35px color-mix(in srgb,var(--ink) 9%,transparent);transition:transform .2s ease,box-shadow .2s ease}
+.friend-card-top{display:flex;align-items:center;gap:.85rem;min-width:0}
+.friend-card-avatar{flex:0 0 3.6rem;width:3.6rem;height:3.6rem;border:2px solid color-mix(in srgb,var(--friend-stroke) 62%,white);font-size:1rem}
+.friend-card-name{min-width:0;flex:1}
+.friend-card-name .section-eyebrow{display:block;margin:0 0 .2rem;font-size:.62rem;letter-spacing:.12em}
+.friend-card-name h2{margin:0;overflow-wrap:anywhere;font:700 1.12rem/1.25 var(--font-display)}
+.friend-card-sun{color:var(--ember);font-size:1.35rem}
+.friend-card-teaser{display:-webkit-box;min-height:3em;margin:0;color:var(--muted);line-height:1.55;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.friend-card-favorite{display:grid;gap:.2rem;margin:0;padding:.7rem .8rem;border-radius:12px;background:color-mix(in srgb,var(--surface) 82%,transparent)}
+.friend-card-favorite span{color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.08em}
+.friend-card-favorite strong{overflow-wrap:anywhere}
+.friend-personality-list{display:flex;flex-wrap:wrap;gap:.4rem}
+.friend-personality-tag,.friend-personality-more{display:inline-flex;align-items:center;min-height:1.8rem;padding:.28rem .6rem;border:1px solid color-mix(in srgb,var(--friend-stroke) 58%,var(--line));border-radius:999px;background:color-mix(in srgb,var(--surface) 75%,transparent);font-size:.76rem;font-weight:650}
+.friend-personality-more{color:var(--muted)}
+.friend-card-open{width:100%;min-height:2.75rem;margin-top:auto;padding:.72rem 1rem;border:2px var(--friend-button-stroke-style,solid) var(--friend-button-stroke,#3c315b);border-radius:12px;background:var(--friend-button-bg,#3c315b);color:var(--friend-button-text,#fff);font:700 .9rem/1.2 var(--font-body);cursor:pointer;transition:filter .16s ease,transform .16s ease}
+.friend-card-open:hover:not(:disabled){filter:brightness(1.08);transform:translateY(-1px)}
+.friend-card-open:disabled{opacity:.85;cursor:default}
+.friend-card-effect-glow{box-shadow:0 12px 34px color-mix(in srgb,var(--friend-stroke) 22%,transparent)}
+.friend-card-effect-lift:hover{transform:translateY(-5px);box-shadow:0 20px 44px color-mix(in srgb,var(--friend-stroke) 25%,transparent)}
+.friend-card-effect-shine:after{position:absolute;inset:0;border-radius:inherit;pointer-events:none;content:"";background:linear-gradient(115deg,transparent 20%,#ffffff45 45%,transparent 68%);background-size:220% 100%;animation:friend-card-shine 6s linear infinite}
+@keyframes friend-card-shine{to{background-position-x:-220%}}
+.friend-card-empty-tags{margin:0;color:var(--muted);font-size:.82rem}
+.friend-card-dialog{position:fixed;width:min(780px,calc(100% - 1rem));max-width:none;max-height:min(92vh,900px);padding:3.25rem 1rem 1rem;border:0;border-radius:24px;background:var(--surface);color:var(--ink);overflow:auto;box-shadow:0 28px 90px #17112466}
+.friend-card-dialog::backdrop{background:#171124a8;backdrop-filter:blur(5px)}
+.friend-card-dialog-close{position:absolute;z-index:2;top:.65rem;right:.65rem;display:grid;place-items:center;width:2.3rem;height:2.3rem;border:1px solid var(--line);border-radius:50%;background:var(--surface);color:var(--ink);font-size:1.5rem;cursor:pointer}
+.friend-card-full{max-width:680px;min-height:520px;margin:0 auto;padding:clamp(1.2rem,4vw,2rem)}
+.friend-card-full .friend-card-name h2{font-size:clamp(1.35rem,4vw,2rem)}
+.friend-card-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem}
+.friend-detail{min-width:0;padding:.9rem;border:1px solid color-mix(in srgb,var(--friend-stroke) 40%,var(--line));border-radius:14px;background:color-mix(in srgb,var(--surface) 85%,transparent)}
+.friend-detail h3{margin:0 0 .45rem;font:700 .78rem/1.3 var(--font-display)}
+.friend-detail p{margin:0;color:var(--muted);line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+.friend-card-custom-button{margin-top:auto}
+.friend-card-editor{overflow:hidden}
+.friend-card-editor-layout{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(255px,.85fr);gap:1.3rem;align-items:start}
+.friend-card-editor-fields{display:grid;gap:1rem;min-width:0}
+.friend-card-editor-fields>label{display:grid;gap:.38rem;font-weight:600}
+.friend-card-editor-fields label small,.friend-card-asset-row small{display:block;color:var(--muted);font-size:.76rem;font-weight:400;line-height:1.45}
+.friend-card-asset-row{display:grid;grid-template-columns:minmax(0,1fr) 110px auto;align-items:center;gap:.8rem;padding:.8rem;border:1px solid var(--line);border-radius:14px;background:var(--bg)}
+.friend-card-asset-row>div:first-child{display:grid;gap:.25rem}
+.friend-card-image-thumb{display:block;width:110px;height:74px;border:1px solid var(--line);border-radius:10px;background-position:center;background-size:cover;background-repeat:no-repeat}
+.friend-card-image-empty{display:grid;place-items:center;padding:.3rem;color:var(--muted);font-size:.68rem;text-align:center}
+.friend-card-asset-actions{display:grid;gap:.4rem}
+.friend-design-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:.75rem;padding:1rem;border:1px solid var(--line);border-radius:14px;background:var(--bg)}
+.friend-design-grid label{display:grid;gap:.35rem;min-width:0;font-size:.8rem;font-weight:650}
+.friend-design-grid input[type=color]{width:100%;height:2.5rem;min-height:2.5rem;padding:.25rem}
+.friend-design-grid h3{grid-column:1/-1;margin:0;font:700 .9rem var(--font-display)}
+.friend-card-editor-preview{position:sticky;top:1rem;display:grid;gap:.6rem;min-width:0}
+.friend-card-editor-preview>.section-eyebrow{font-size:.65rem}
+.friend-card-live-preview .friend-card{min-height:310px}
+.friend-card-live-preview .friend-card-teaser{-webkit-line-clamp:4;min-height:5em}
+.team-role-row-owner{grid-template-columns:minmax(120px,.8fr) auto minmax(200px,1.3fr) auto}
+@media(max-width:900px){.friend-card-editor-layout{grid-template-columns:1fr}.friend-card-editor-preview{position:static}.friend-card-editor-preview .friend-card{max-width:560px}.team-role-row-owner{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){.team-role-row-owner{grid-template-columns:1fr 1fr}.friend-card-details{grid-template-columns:1fr}.friend-card-asset-row{grid-template-columns:1fr 90px}.friend-card-asset-actions{grid-column:1/-1;display:flex}.friend-card-image-thumb{width:90px;height:64px}}
+@media(prefers-reduced-motion:reduce){.friend-card-effect-shine:after{animation:none}.friend-card,.friend-card-open{transition:none}}
+
 /* Individual project pages */
 .project-page{padding:1.25rem 0 3rem;overflow:hidden}
 .project-banner{position:relative;width:min(calc(100% - 2.5rem),1180px);aspect-ratio:16/9;margin:0 auto -7rem;overflow:hidden;border-radius:24px;background:#152332;-webkit-mask-image:linear-gradient(to bottom,#000 55%,transparent 100%);mask-image:linear-gradient(to bottom,#000 55%,transparent 100%)}

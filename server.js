@@ -16,7 +16,7 @@ const SESSION_MS = 30 * 24 * 60 * 60 * 1000;
 const PAUSE_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 const USERNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_BODY = 3 * 1024 * 1024;
-const STATIC_FILES = new Set(['index.html', 'list.html', 'games.html', 'project.html', 'artwork.html', 'updates.html', 'account.html', 'arts.html', 'groups.html', 'download.html', 'shop.html', 'assets/hollow-shift-icon.webp', 'assets/gamma-frost-banner.webp', 'assets/golden-spiral-sun-icon.png', 'styles.css', 'app.js']);
+const STATIC_FILES = new Set(['index.html', 'list.html', 'members.html', 'games.html', 'project.html', 'artwork.html', 'updates.html', 'account.html', 'arts.html', 'groups.html', 'download.html', 'shop.html', 'assets/hollow-shift-icon.webp', 'assets/gamma-frost-banner.webp', 'assets/golden-spiral-sun-icon.png', 'styles.css', 'app.js']);
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.webp': 'image/webp', '.png': 'image/png' };
 const PRIMARY_ROLES = {
   assistant: { label: 'Assistant', explanation: 'Supports studio coordination and helps keep Solaris projects moving.' },
@@ -25,6 +25,8 @@ const PRIMARY_ROLES = {
   member: { label: 'Member', explanation: 'A member of the Solaris Studio community.' }
 };
 const PROJECT_TAGS = ['Gamma Frost', 'OmiWo: Collide'];
+const FRIEND_CARD_STROKES = new Set(['solid', 'dashed', 'dotted', 'double', 'groove', 'ridge']);
+const FRIEND_CARD_EFFECTS = new Set(['none', 'glow', 'lift', 'shine']);
 
 let accounts = [];
 let pausedAccounts = [];
@@ -102,8 +104,10 @@ function normalizeAccount(account) {
     changed = true;
   }
   if (Object.hasOwn(account.profile, 'teamKey')) { delete account.profile.teamKey; changed = true; }
-  const secondaryRoles = cleanSecondaryRoles(account.profile.secondaryRoles);
+  const secondaryRoles = account.role === 'owner' || account.profile.primaryRole !== 'member' ? cleanSecondaryRoles(account.profile.secondaryRoles) : [];
   if (JSON.stringify(secondaryRoles) !== JSON.stringify(account.profile.secondaryRoles || [])) { account.profile.secondaryRoles = secondaryRoles; changed = true; }
+  const friendCard = account.role !== 'owner' && account.profile.primaryRole === 'member' ? cleanFriendCard(account.profile.friendCard) : emptyFriendCard();
+  if (!account.profile.friendCard || JSON.stringify(friendCard) !== JSON.stringify(account.profile.friendCard)) { account.profile.friendCard = friendCard; changed = true; }
   if (!Number(account.profile.usernameLastChangedAt)) { account.profile.usernameLastChangedAt = Date.now(); changed = true; }
   return changed;
 }
@@ -159,12 +163,45 @@ function cleanSecondaryRoles(value) {
     return true;
   }).slice(0, 20);
 }
-function imageData(value) {
+function imageData(value, maxLength = 950_000) {
   if (value == null || value === '') return '';
-  if (typeof value !== 'string' || value.length > 950_000 || !/^data:image\/(?:webp|jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)) {
+  if (typeof value !== 'string' || value.length > maxLength || !/^data:image\/(?:webp|jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)) {
     throw Object.assign(new Error('That image could not be saved. Choose a smaller JPG, PNG, or WebP image.'), { status: 400 });
   }
   return value;
+}
+function emptyFriendCard() {
+  return { likes: '', dislikes: '', favoriteThing: '', lookingFor: '', personalityTags: [], backgroundImage: '', backgroundColor: '#fff8e9', borderStyle: 'solid', borderColor: '#dcae55', borderWidth: 2, buttonColor: '#3c315b', buttonTextColor: '#ffffff', buttonBorderStyle: 'solid', buttonBorderColor: '#3c315b', effect: 'glow' };
+}
+function cleanPersonalityTags(value) {
+  const source = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
+  const seen = new Set();
+  return source.map(item => text(item, 28).replace(/\s+/g, ' ')).filter(item => {
+    if (!item || !/^[A-Za-z0-9][A-Za-z0-9 ._'&+-]*$/.test(item)) return false;
+    const key = item.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 20);
+}
+function safeColor(value, fallback) {
+  const color = text(value, 7);
+  return /^#[0-9a-fA-F]{6}$/.test(color) ? color.toLowerCase() : fallback;
+}
+function cleanFriendCard(value) {
+  const input = value && typeof value === 'object' ? value : {};
+  const defaults = emptyFriendCard();
+  const borderWidth = Math.min(8, Math.max(1, Math.round(Number(input.borderWidth) || defaults.borderWidth)));
+  const borderStyle = FRIEND_CARD_STROKES.has(input.borderStyle) ? input.borderStyle : defaults.borderStyle;
+  const buttonBorderStyle = FRIEND_CARD_STROKES.has(input.buttonBorderStyle) ? input.buttonBorderStyle : defaults.buttonBorderStyle;
+  const effect = FRIEND_CARD_EFFECTS.has(input.effect) ? input.effect : defaults.effect;
+  return {
+    likes: text(input.likes, 400), dislikes: text(input.dislikes, 400), favoriteThing: text(input.favoriteThing, 160), lookingFor: text(input.lookingFor, 300),
+    personalityTags: cleanPersonalityTags(input.personalityTags), backgroundImage: imageData(input.backgroundImage, 400_000),
+    backgroundColor: safeColor(input.backgroundColor, defaults.backgroundColor), borderStyle, borderColor: safeColor(input.borderColor, defaults.borderColor), borderWidth,
+    buttonColor: safeColor(input.buttonColor, defaults.buttonColor), buttonTextColor: safeColor(input.buttonTextColor, defaults.buttonTextColor),
+    buttonBorderStyle, buttonBorderColor: safeColor(input.buttonBorderColor, defaults.buttonBorderColor), effect
+  };
 }
 function validateSocials(value) {
   if (!Array.isArray(value)) return [];
@@ -185,7 +222,7 @@ function validateFavorite(item, type) {
   if (!title) return null;
   return { type, title, comment: text(item.comment, 240) };
 }
-function cleanProfile(input, existing = {}) {
+function cleanProfile(input, existing = {}, allowMemberFriendCard = true) {
   const socials = validateSocials(input.socials);
   const favorites = ['game', 'developer', 'artwork'].map(type => validateFavorite(input.favorites && input.favorites[type], type)).filter(Boolean);
   const installedGames = Array.isArray(input.installedGames) ? [...new Set(input.installedGames.map(value => text(value, 80)).filter(Boolean))].slice(0, 20) : [];
@@ -204,6 +241,7 @@ function cleanProfile(input, existing = {}) {
     socials,
     likes: text(input.likes, 400),
     dislikes: text(input.dislikes, 400),
+    friendCard: allowMemberFriendCard ? cleanFriendCard(input.friendCard) : emptyFriendCard(),
     favorites: Object.fromEntries(['game', 'developer', 'artwork'].map(type => [type, favorites.find(item => item.type === type) || null])),
     installedGames
   };
@@ -256,6 +294,15 @@ async function handleApi(req, res, pathname) {
     });
     return send(res, 200, { members: team });
   }
+  if (req.method === 'GET' && pathname === '/api/members') {
+    const members = accounts.filter(account => account.role !== 'owner' && account.profile.primaryRole === 'member').map(account => ({
+      id: account.id,
+      username: account.profile.username,
+      avatarImage: account.profile.avatarImage,
+      friendCard: cleanFriendCard(account.profile.friendCard)
+    }));
+    return send(res, 200, { members });
+  }
   if (req.method === 'GET' && pathname === '/api/admin/accounts') {
     const owner = await getAccount(req);
     if (!owner || owner.role !== 'owner') return send(res, 403, { error: 'Only the Solaris Owner can assign account roles.' });
@@ -268,20 +315,24 @@ async function handleApi(req, res, pathname) {
     const input = await readBody(req);
     const target = accounts.find(item => item.id === input.accountId);
     if (!target) return send(res, 404, { error: 'That account could not be found.' });
-    if (target.role === 'owner') return send(res, 403, { error: 'The Owner access role cannot be changed here.' });
     const primaryRole = text(input.primaryRole, 32);
-    if (!Object.hasOwn(PRIMARY_ROLES, primaryRole)) return send(res, 400, { error: 'Choose Assistant, AI Assistant, Developer, or Member. Visitor is reserved for guests.' });
+    if (target.role === 'owner' && primaryRole !== 'owner') return send(res, 403, { error: 'The Owner permission cannot be changed here.' });
+    if (target.role !== 'owner' && !Object.hasOwn(PRIMARY_ROLES, primaryRole)) return send(res, 400, { error: 'Choose Assistant, AI Assistant, Developer, or Member. Visitor is reserved for guests.' });
+    const assignedPrimaryRole = target.role === 'owner' ? 'owner' : primaryRole;
     const previousPrimaryRole = target.profile.primaryRole;
     const previousSecondaryRoles = target.profile.secondaryRoles;
-    target.profile.primaryRole = primaryRole;
-    target.profile.secondaryRoles = cleanSecondaryRoles(input.secondaryRoles);
+    const previousFriendCard = target.profile.friendCard;
+    if (target.role !== 'owner') target.profile.primaryRole = assignedPrimaryRole;
+    target.profile.secondaryRoles = assignedPrimaryRole === 'member' ? [] : cleanSecondaryRoles(input.secondaryRoles);
+    if (assignedPrimaryRole !== 'member' || target.role === 'owner') target.profile.friendCard = emptyFriendCard();
     try { await saveAccounts(); }
     catch (error) {
       target.profile.primaryRole = previousPrimaryRole;
       target.profile.secondaryRoles = previousSecondaryRoles;
+      target.profile.friendCard = previousFriendCard;
       throw error;
     }
-    return send(res, 200, { account: { id: target.id, username: target.profile.username, primaryRole, secondaryRoles: target.profile.secondaryRoles } });
+    return send(res, 200, { account: { id: target.id, username: target.profile.username, primaryRole: assignedPrimaryRole, secondaryRoles: target.profile.secondaryRoles } });
   }
   if (req.method === 'POST' && pathname === '/api/owner/claim') {
     if (!allowAttempt(req)) return send(res, 429, { error: 'Too many Owner setup attempts. Please try again later.' });
@@ -376,12 +427,15 @@ async function handleApi(req, res, pathname) {
     const realName = text(input.realName, 80);
     const realNameChanged = Boolean(account.profile.realName) && realName !== account.profile.realName;
     if (realNameChanged && (input.useWhoTicket !== true || Number(account.tickets?.who) < 1)) return send(res, 403, { error: 'Your real name is permanent. Get a WHO? ticket in the Shop to change it.' });
-    const updatedProfile = cleanProfile(input, account.profile);
+    const previousProfile = account.profile;
+    const previousTickets = { ...(account.tickets || {}) };
+    const updatedProfile = cleanProfile(input, account.profile, account.role !== 'owner' && account.profile.primaryRole === 'member');
+    if (usernameChanged) updatedProfile.usernameLastChangedAt = Date.now();
     if (useNamecardTicket) account.tickets.namecard--;
     if (realNameChanged) account.tickets.who--;
-    if (usernameChanged) account.profile.usernameLastChangedAt = Date.now();
     account.profile = updatedProfile;
-    await saveAccounts();
+    try { await saveAccounts(); }
+    catch (error) { account.profile = previousProfile; account.tickets = previousTickets; throw error; }
     return send(res, 200, { user: privateProfile(account) });
   }
   if (req.method === 'POST' && pathname === '/api/account/pause') {
