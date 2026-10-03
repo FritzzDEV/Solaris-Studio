@@ -550,6 +550,26 @@ dialog::backdrop{background:var(--backdrop)}
 .member-tag{font-size:.74rem;line-height:1.2}
 .member-tag-project{border-color:color-mix(in srgb,var(--ember) 40%,var(--line));background:color-mix(in srgb,var(--ember) 8%,var(--bg))}
 .member-empty{margin:1rem 0}
+.member-profile-link{display:inline-flex;align-items:center;gap:.4rem;margin-top:.8rem;color:var(--ember);font-size:.82rem;font-weight:700;text-decoration:none}
+.member-profile-link:hover{text-decoration:underline}
+.profile-role-chip{display:inline-flex;margin-top:.35rem;padding:.25rem .65rem;border:1px solid color-mix(in srgb,var(--ember) 45%,var(--line));border-radius:999px;background:color-mix(in srgb,var(--ember) 9%,var(--surface));color:var(--ember);font-size:.73rem;font-weight:750}
+.email-settings-form{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:.75rem}
+.email-settings-form label{display:grid;gap:.35rem;font-size:.9rem;font-weight:600}
+.email-settings-form input,.team-admin-row select{width:100%;min-width:0;padding:.68rem .8rem;border:1.5px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:400 .95rem/1.5 var(--font-body)}
+.email-status{color:var(--muted);font-size:.88rem}
+.team-admin-list{display:grid;gap:.55rem;margin-top:.75rem}
+.team-admin-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,.55fr);align-items:center;gap:1rem;padding:.75rem .85rem;border:1px solid var(--line);border-radius:12px;background:var(--bg)}
+.team-admin-row>span{display:grid;gap:.2rem;min-width:0}
+.team-admin-row small{color:var(--muted);font-size:.78rem}
+.ticket-choice{display:flex!important;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:.55rem!important;margin:.55rem 0 1rem!important;font-size:.83rem;font-weight:500!important}
+.ticket-choice input{width:1rem;height:1rem;accent-color:var(--btn)}
+.owner-setup{margin:.75rem 0;padding:.8rem;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.owner-setup summary{color:var(--muted);font-size:.85rem;font-weight:650;cursor:pointer}
+.owner-setup label{margin-top:.65rem}
+.owner-setup small{display:block;margin-top:.4rem;color:var(--muted)}
+.text-button{justify-self:start;padding:.35rem 0;border:0;background:transparent;color:var(--ember);font:600 .87rem var(--font-body);cursor:pointer}
+.text-button:hover{text-decoration:underline}
+@media(max-width:600px){.email-settings-form,.team-admin-row{grid-template-columns:1fr}.email-settings-form>.btn{width:100%}}
 
 /* Group introduction and downloadable extras */
 .section-eyebrow{display:block;margin-bottom:.45rem;color:var(--ember);font-size:.7rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
@@ -562,6 +582,10 @@ dialog::backdrop{background:var(--backdrop)}
 .download-reasons li{padding-left:.2rem;color:var(--muted);line-height:1.55}
 .download-reasons li::marker{color:var(--ember)}
 .download-reasons strong{color:var(--ink)}
+.update-card{max-width:820px;margin:0 0 4rem;padding:clamp(1.25rem,3vw,2rem);border:1px solid var(--line);border-radius:20px;background:linear-gradient(135deg,color-mix(in srgb,var(--ember) 9%,var(--surface)),var(--surface) 70%)}
+.update-card h2{margin:0 0 .8rem;font:700 clamp(1.35rem,3vw,1.9rem)/1.2 var(--font-display)}
+.update-card p{max-width:68ch;color:var(--muted);line-height:1.7}
+.update-card p+p{margin-top:.75rem}
 .download-categories{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;margin:1.2rem 0}
 .download-category{min-height:140px;padding:1.25rem;border:1px solid var(--line);border-radius:18px;background:var(--surface)}
 .download-category h2,.project-download-links h2{margin-bottom:.55rem;font:700 1rem var(--font-display)}
@@ -596,6 +620,8 @@ dialog::backdrop{background:var(--backdrop)}
 .project-copy{margin:1rem 0;padding:1.25rem;border:1px solid var(--line);border-radius:17px;background:var(--surface)}
 .project-copy h2{margin-bottom:.65rem;font:700 1.02rem var(--font-display)}
 .project-copy p{margin:.55rem 0;color:var(--muted);line-height:1.65;white-space:pre-wrap}
+.project-story{padding-left:1.2rem;border-left:3px solid color-mix(in srgb,var(--ember) 52%,var(--line))}
+.project-release{background:color-mix(in srgb,var(--ember) 7%,var(--surface))}
 .project-extra{background:color-mix(in srgb,var(--ember) 5%,var(--surface))}
 .project-extra .text-link{margin-top:.25rem}
 .project-switcher{position:sticky;top:1rem;padding:1.15rem;border:1px solid var(--line);border-radius:20px;background:var(--surface);box-shadow:0 12px 34px rgba(30,10,5,.08)}
