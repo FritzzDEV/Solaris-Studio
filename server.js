@@ -14,11 +14,9 @@ const PORT = Number(process.env.PORT) || 4173;
 const HOST = '0.0.0.0';
 const SESSION_MS = 30 * 24 * 60 * 60 * 1000;
 const PAUSE_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
-const EMAIL_TOKEN_MS = 24 * 60 * 60 * 1000;
-const RESET_TOKEN_MS = 60 * 60 * 1000;
 const USERNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_BODY = 3 * 1024 * 1024;
-const STATIC_FILES = new Set(['index.html', 'list.html', 'games.html', 'project.html', 'artwork.html', 'updates.html', 'account.html', 'arts.html', 'groups.html', 'download.html', 'assets/hollow-shift-icon.webp', 'assets/gamma-frost-banner.webp', 'assets/golden-spiral-sun-icon.png', 'styles.css', 'app.js']);
+const STATIC_FILES = new Set(['index.html', 'list.html', 'games.html', 'project.html', 'artwork.html', 'updates.html', 'account.html', 'arts.html', 'groups.html', 'download.html', 'shop.html', 'assets/hollow-shift-icon.webp', 'assets/gamma-frost-banner.webp', 'assets/golden-spiral-sun-icon.png', 'styles.css', 'app.js']);
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.webp': 'image/webp', '.png': 'image/png' };
 const TEAM_SLOTS = {
   owner: { title: 'The Owner', roles: ['Coder', 'Mesh modeler', 'Tester', 'Updater', 'Announcer', 'The Owner'], projects: ['Gamma Frost', 'OmiWo: Collide'] },
@@ -28,7 +26,6 @@ const TEAM_SLOTS = {
 let accounts = [];
 let pausedAccounts = [];
 let pool = null;
-let mailer = null;
 const sessions = new Map();
 const attempts = new Map();
 let writeQueue = Promise.resolve();
@@ -84,15 +81,19 @@ function publicProfile(account) {
   return { id, ...profile, accountRole: account.role || 'member' };
 }
 function privateProfile(account) {
-  return { ...publicProfile(account), email: account.email || '', pendingEmail: account.pendingEmail || '', emailVerified: account.emailVerified === true };
+  const ownerUsername = text(process.env.SOLARIS_OWNER_USERNAME || 'Fritzz Xenon', 24);
+  const ownerExists = accounts.some(item => item.role === 'owner') || pausedAccounts.some(item => item.account.role === 'owner');
+  const canClaimOwner = Boolean(process.env.SOLARIS_OWNER_SETUP_TOKEN && !ownerExists && account.profile.username.toLowerCase() === ownerUsername.toLowerCase());
+  return { ...publicProfile(account), tickets: account.tickets || { namecard: 0, who: 0 }, canClaimOwner };
 }
 function normalizeAccount(account) {
   let changed = false;
   if (!account.role) { account.role = 'member'; changed = true; }
-  if (typeof account.email !== 'string') { account.email = ''; changed = true; }
-  if (typeof account.pendingEmail !== 'string') { account.pendingEmail = ''; changed = true; }
-  if (account.emailVerified !== true) { if (account.emailVerified !== false) changed = true; account.emailVerified = false; }
-  if (!account.pendingEmail && account.email && account.emailVerified !== true) { account.pendingEmail = account.email; changed = true; }
+  if (!account.tickets || typeof account.tickets !== 'object') { account.tickets = { namecard: 0, who: 0 }; changed = true; }
+  for (const kind of ['namecard', 'who']) {
+    const count = Math.min(99, Math.max(0, Math.floor(Number(account.tickets[kind]) || 0)));
+    if (account.tickets[kind] !== count) { account.tickets[kind] = count; changed = true; }
+  }
   if (!Number(account.profile.usernameLastChangedAt)) { account.profile.usernameLastChangedAt = Date.now(); changed = true; }
   if (!['owner', 'assistant'].includes(account.profile.teamKey) && account.profile.teamKey != null) { account.profile.teamKey = null; changed = true; }
   return changed;
@@ -100,70 +101,16 @@ function normalizeAccount(account) {
 function validUsername(value) {
   return typeof value === 'string' && value.length >= 3 && value.length <= 24 && /^[A-Za-z0-9_. -]+$/.test(value) && !/\s{2,}/.test(value);
 }
-function normalizeEmail(value) {
-  return text(value, 254).toLowerCase();
-}
-function validEmail(value) {
-  return value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
 async function passwordMatches(account, password) {
   if (typeof password !== 'string' || password.length > 200) return false;
   const expected = Buffer.from(account.passwordHash, 'hex');
   const candidate = Buffer.from(await scrypt(password, account.salt, 64));
   return expected.length === candidate.length && crypto.timingSafeEqual(expected, candidate);
 }
-function logEmailFailure(context, error) {
-  const cause = error && error.cause;
-  console.error(`[EMAIL SEND ERROR] ${context}`, {
-    name: error?.name || 'Error',
-    message: error?.message || String(error),
-    code: error?.code,
-    command: error?.command,
-    syscall: error?.syscall,
-    address: error?.address,
-    port: error?.port,
-    responseCode: error?.responseCode,
-    response: error?.response,
-    stack: error?.stack,
-    cause: cause ? { name: cause.name, message: cause.message, code: cause.code, stack: cause.stack } : undefined
-  });
-}
 function secureEqual(left, right) {
   const a = Buffer.from(String(left || ''));
   const b = Buffer.from(String(right || ''));
   return a.length === b.length && crypto.timingSafeEqual(a, b);
-}
-function getMailer() {
-  if (!process.env.SMTP_HOST || !process.env.EMAIL_FROM) return null;
-  if (!mailer) {
-    const { createTransport } = require('nodemailer');
-    const port = Number(process.env.SMTP_PORT) || 587;
-    mailer = createTransport({
-      host: process.env.SMTP_HOST,
-      port,
-      secure: process.env.SMTP_SECURE === 'true' || port === 465,
-      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS || '' } : undefined
-    });
-  }
-  return mailer;
-}
-function siteBaseUrl(req) {
-  if (process.env.SITE_URL) return new URL(process.env.SITE_URL).origin;
-  const protocol = req.headers['x-forwarded-proto'] || 'http';
-  return `${protocol}://${req.headers.host || 'localhost'}`;
-}
-async function sendAccountEmail(req, address, subject, token, kind) {
-  const transport = getMailer();
-  if (!transport) throw Object.assign(new Error('Email delivery is not configured. Add SMTP settings to the server first.'), { status: 503 });
-  const target = new URL('/account.html', siteBaseUrl(req));
-  target.searchParams.set(kind === 'verify' ? 'verify' : 'reset', token);
-  const instructions = kind === 'verify' ? 'Verify your email address' : 'Choose a new password';
-  await transport.sendMail({
-    from: process.env.EMAIL_FROM,
-    to: address,
-    subject,
-    text: `${instructions} for your Solaris Studio account by opening this link:\n\n${target.href}\n\nIf you did not request this, you can ignore this message.`
-  });
 }
 async function setSession(res, accountId) {
   const token = crypto.randomBytes(32).toString('base64url');
@@ -278,11 +225,11 @@ async function handleApi(req, res, pathname) {
   }
   if (req.method === 'GET' && pathname === '/api/public-profile') {
     const query = new URL(req.url, `http://${req.headers.host || 'localhost'}`).searchParams;
-    const account = accounts.find(item => item.id === query.get('id') && (!item.pendingEmail || item.emailVerified === true));
+    const account = accounts.find(item => item.id === query.get('id'));
     return account ? send(res, 200, { user: publicProfile(account) }) : send(res, 404, { error: 'This profile could not be found.' });
   }
   if (req.method === 'GET' && pathname === '/api/team') {
-    const team = accounts.filter(account => account.emailVerified === true && TEAM_SLOTS[account.profile.teamKey]).map(account => {
+    const team = accounts.filter(account => TEAM_SLOTS[account.profile.teamKey]).map(account => {
       const slot = TEAM_SLOTS[account.profile.teamKey];
       return { id: account.id, online: account.profile.username, real: account.profile.realName || 'Not shared', avatarImage: account.profile.avatarImage, title: slot.title, roles: slot.roles, projects: slot.projects };
     });
@@ -291,95 +238,39 @@ async function handleApi(req, res, pathname) {
   if (req.method === 'GET' && pathname === '/api/admin/accounts') {
     const owner = await getAccount(req);
     if (!owner || owner.role !== 'owner') return send(res, 403, { error: 'Only the Solaris Owner can manage team accounts.' });
-    const list = accounts.map(account => ({ id: account.id, username: account.profile.username, emailVerified: account.emailVerified === true, accountRole: account.role || 'member', teamKey: account.profile.teamKey || '' }));
+    const list = accounts.map(account => ({ id: account.id, username: account.profile.username, accountRole: account.role || 'member', teamKey: account.profile.teamKey || '' }));
     return send(res, 200, { accounts: list });
   }
-  if (req.method === 'POST' && pathname === '/api/verify-email') {
-    const input = await readBody(req);
-    const tokenHash = crypto.createHash('sha256').update(text(input.token, 128)).digest('hex');
-    const account = accounts.find(item => item.emailVerificationTokenHash === tokenHash && Number(item.emailVerificationExpiresAt) > Date.now());
-    if (!account) return send(res, 400, { error: 'This verification link is invalid or has expired. Request a new one.' });
-    if (account.pendingEmail) account.email = account.pendingEmail;
-    account.pendingEmail = '';
-    account.emailVerified = true;
-    account.emailVerificationTokenHash = '';
-    account.emailVerificationExpiresAt = 0;
-    await saveAccounts();
-    await setSession(res, account.id);
-    return send(res, 200, { user: privateProfile(account) });
-  }
-  if (req.method === 'POST' && pathname === '/api/request-email-verification') {
+  if (req.method === 'POST' && pathname === '/api/owner/claim') {
+    if (!allowAttempt(req)) return send(res, 429, { error: 'Too many Owner setup attempts. Please try again later.' });
     const account = await getAccount(req);
-    if (!account) return send(res, 401, { error: 'Please log in to update your email.' });
+    if (!account) return send(res, 401, { error: 'Log in to claim the Solaris Owner account.' });
     const input = await readBody(req);
-    const email = normalizeEmail(input.email);
-    if (!validEmail(email)) return send(res, 400, { error: 'Enter a valid email address.' });
-    if (accounts.some(item => item.id !== account.id && (item.email === email || item.pendingEmail === email)) || pausedAccounts.some(item => item.account.email === email || item.account.pendingEmail === email)) return send(res, 409, { error: 'That email address is already connected to another account.' });
-    if (account.email === email && account.emailVerified) return send(res, 200, { message: 'That email is already verified.' });
-    const token = crypto.randomBytes(32).toString('base64url');
-    const previous = { pendingEmail: account.pendingEmail, emailVerificationTokenHash: account.emailVerificationTokenHash, emailVerificationExpiresAt: account.emailVerificationExpiresAt };
-    account.pendingEmail = email;
-    account.emailVerificationTokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    account.emailVerificationExpiresAt = Date.now() + EMAIL_TOKEN_MS;
-    try {
-      await saveAccounts();
-      await sendAccountEmail(req, email, 'Verify your Solaris Studio email', token, 'verify');
-    } catch (error) {
-      Object.assign(account, previous);
-      await saveAccounts();
-      logEmailFailure('email change verification', error);
-      return send(res, error.status || 503, { error: error.status ? error.message : 'The verification email could not be sent. Check the mail server settings and try again.' });
-    }
-    return send(res, 200, { message: `A verification link was sent to ${email}.` });
+    const ownerUsername = text(process.env.SOLARIS_OWNER_USERNAME || 'Fritzz Xenon', 24);
+    const ownerExists = accounts.some(item => item.role === 'owner') || pausedAccounts.some(item => item.account.role === 'owner');
+    if (ownerExists || account.profile.username.toLowerCase() !== ownerUsername.toLowerCase()) return send(res, 403, { error: 'This account is not eligible to claim the Owner role.' });
+    if (!process.env.SOLARIS_OWNER_SETUP_TOKEN || !secureEqual(input.ownerSetupCode, process.env.SOLARIS_OWNER_SETUP_TOKEN)) return send(res, 403, { error: 'The Owner setup code is not valid.' });
+    const previousRole = account.role;
+    const previousTeamKey = account.profile.teamKey;
+    account.role = 'owner';
+    account.profile.teamKey = 'owner';
+    try { await saveAccounts(); }
+    catch (error) { account.role = previousRole; account.profile.teamKey = previousTeamKey; throw error; }
+    return send(res, 200, { user: { ...privateProfile(account), canClaimOwner: false } });
   }
-  if (req.method === 'POST' && pathname === '/api/resend-verification') {
-    if (!allowAttempt(req)) return send(res, 429, { error: 'Too many verification requests. Please try again later.' });
+  if (req.method === 'POST' && pathname === '/api/shop/purchase-ticket') {
+    const account = await getAccount(req);
+    if (!account) return send(res, 401, { error: 'Log in to add a ticket to your account.' });
     const input = await readBody(req);
-    const email = normalizeEmail(input.email);
-    const account = accounts.find(item => item.pendingEmail === email && item.emailVerified !== true);
-    const transport = account ? getMailer() : null;
-    if (account && !transport) logEmailFailure('verification resend configuration', Object.assign(new Error('SMTP_HOST and EMAIL_FROM must be set to send verification email.'), { code: 'EMAIL_CONFIG_MISSING' }));
-    if (account && transport) {
-      const token = crypto.randomBytes(32).toString('base64url');
-      account.emailVerificationTokenHash = crypto.createHash('sha256').update(token).digest('hex');
-      account.emailVerificationExpiresAt = Date.now() + EMAIL_TOKEN_MS;
-      await saveAccounts();
-      try { await sendAccountEmail(req, email, 'Verify your Solaris Studio account', token, 'verify'); }
-      catch (error) { logEmailFailure('verification resend', error); }
-    }
-    return send(res, 200, { message: 'If an unverified account uses that email, a new verification link will be sent.' });
-  }
-  if (req.method === 'POST' && pathname === '/api/forgot-password') {
-    if (!allowAttempt(req)) return send(res, 429, { error: 'Too many reset requests. Please try again later.' });
-    const input = await readBody(req);
-    const email = normalizeEmail(input.email);
-    const account = accounts.find(item => item.email === email && item.emailVerified === true);
-    const transport = account ? getMailer() : null;
-    if (account && !transport) logEmailFailure('password reset configuration', Object.assign(new Error('SMTP_HOST and EMAIL_FROM must be set to send recovery email.'), { code: 'EMAIL_CONFIG_MISSING' }));
-    if (account && transport) {
-      const token = crypto.randomBytes(32).toString('base64url');
-      account.passwordResetTokenHash = crypto.createHash('sha256').update(token).digest('hex');
-      account.passwordResetExpiresAt = Date.now() + RESET_TOKEN_MS;
-      await saveAccounts();
-      try { await sendAccountEmail(req, email, 'Reset your Solaris Studio password', token, 'reset'); }
-      catch (error) { logEmailFailure('password reset', error); }
-    }
-    return send(res, 200, { message: 'If a verified account uses that email, a password reset link will be sent.' });
-  }
-  if (req.method === 'POST' && pathname === '/api/reset-password') {
-    const input = await readBody(req);
-    const tokenHash = crypto.createHash('sha256').update(text(input.token, 128)).digest('hex');
-    if (typeof input.password !== 'string' || input.password.length < 10 || input.password.length > 200) return send(res, 400, { error: 'Use a password between 10 and 200 characters.' });
-    const account = accounts.find(item => item.passwordResetTokenHash === tokenHash && Number(item.passwordResetExpiresAt) > Date.now());
-    if (!account) return send(res, 400, { error: 'This password reset link is invalid or has expired. Request a new one.' });
-    account.salt = crypto.randomBytes(16).toString('hex');
-    account.passwordHash = Buffer.from(await scrypt(input.password, account.salt, 64)).toString('hex');
-    account.passwordResetTokenHash = '';
-    account.passwordResetExpiresAt = 0;
-    for (const [sessionToken, session] of sessions) if (session.accountId === account.id) sessions.delete(sessionToken);
-    if (pool) await pool.query('DELETE FROM solaris_sessions WHERE account_id = $1', [account.id]);
-    await saveAccounts();
-    return send(res, 200, { message: 'Your password was changed. You can now log in.' });
+    if (!['namecard', 'who'].includes(input.ticketType)) return send(res, 400, { error: 'Choose a valid ticket.' });
+    account.tickets ||= { namecard: 0, who: 0 };
+    const type = input.ticketType;
+    if (Number(account.tickets[type]) >= 99) return send(res, 409, { error: 'Your ticket inventory is full.' });
+    const previousCount = Number(account.tickets[type]) || 0;
+    account.tickets[type] = (Number(account.tickets[type]) || 0) + 1;
+    try { await saveAccounts(); }
+    catch (error) { account.tickets[type] = previousCount; throw error; }
+    return send(res, 200, { user: privateProfile(account), message: `${type === 'namecard' ? 'Namecard' : 'WHO?'} ticket added for free.` });
   }
   if (req.method === 'POST' && pathname === '/api/signup') {
     if (!allowAttempt(req)) return send(res, 429, { error: 'Too many sign-up attempts. Please try again later.' });
@@ -387,17 +278,10 @@ async function handleApi(req, res, pathname) {
     const username = text(input.username, 24);
     if (!validUsername(username)) return send(res, 400, { error: 'Use 3–24 letters, numbers, dots, dashes, underscores, or single spaces.' });
     if (accounts.some(account => account.profile.username.toLowerCase() === username.toLowerCase()) || pausedAccounts.some(item => item.account.profile.username.toLowerCase() === username.toLowerCase())) return send(res, 409, { error: 'That username is already taken or temporarily reserved by a paused account.' });
-    const email = normalizeEmail(input.email);
-    if (!validEmail(email)) return send(res, 400, { error: 'Enter a valid email address.' });
-    if (accounts.some(account => account.email === email || account.pendingEmail === email) || pausedAccounts.some(item => item.account.email === email || item.account.pendingEmail === email)) return send(res, 409, { error: 'That email address is already connected to an account.' });
-    if (!getMailer()) {
-      logEmailFailure('signup verification configuration', Object.assign(new Error('SMTP_HOST and EMAIL_FROM must be set to send verification email.'), { code: 'EMAIL_CONFIG_MISSING' }));
-      return send(res, 503, { error: 'Email verification is not ready yet. The studio needs to configure its email service first.' });
-    }
     if (typeof input.password !== 'string' || input.password.length < 10 || input.password.length > 200) return send(res, 400, { error: 'Use a password between 10 and 200 characters.' });
-    const ownerUsername = text(process.env.SOLARIS_OWNER_USERNAME, 24);
+    const ownerUsername = text(process.env.SOLARIS_OWNER_USERNAME || 'Fritzz Xenon', 24);
     const setupCode = String(input.ownerSetupCode || '');
-    const ownerExists = accounts.some(account => account.role === 'owner');
+    const ownerExists = accounts.some(account => account.role === 'owner') || pausedAccounts.some(item => item.account.role === 'owner');
     const reservedOwnerName = !ownerExists && ownerUsername && username.toLowerCase() === ownerUsername.toLowerCase();
     if (reservedOwnerName && !setupCode) return send(res, 403, { error: 'This username is reserved for the studio owner. Enter the owner setup code.' });
     let claimOwner = false;
@@ -408,22 +292,14 @@ async function handleApi(req, res, pathname) {
     const salt = crypto.randomBytes(16).toString('hex');
     const passwordHash = Buffer.from(await scrypt(input.password, salt, 64)).toString('hex');
     const id = crypto.randomUUID();
-    const verificationToken = crypto.randomBytes(32).toString('base64url');
-    const account = { id, salt, passwordHash, role: claimOwner ? 'owner' : 'member', email, emailVerified: false, pendingEmail: email,
-      emailVerificationTokenHash: crypto.createHash('sha256').update(verificationToken).digest('hex'), emailVerificationExpiresAt: Date.now() + EMAIL_TOKEN_MS,
+    const account = { id, salt, passwordHash, role: claimOwner ? 'owner' : 'member', tickets: { namecard: 0, who: 0 },
       profile: cleanProfile({ ...input.profile, username }) };
     if (claimOwner) account.profile.teamKey = 'owner';
     accounts.push(account);
-    try {
-      await saveAccounts();
-      await sendAccountEmail(req, email, 'Verify your Solaris Studio account', verificationToken, 'verify');
-    } catch (error) {
-      logEmailFailure('signup verification', error);
-      accounts = accounts.filter(item => item.id !== id);
-      await saveAccounts();
-      return send(res, error.status || 503, { error: error.status ? error.message : 'The verification email could not be sent. Try again later.' });
-    }
-    return send(res, 201, { message: `Check ${email} for a link to verify your account.` });
+    try { await saveAccounts(); }
+    catch (error) { accounts = accounts.filter(item => item.id !== id); throw error; }
+    await setSession(res, account.id);
+    return send(res, 201, { user: privateProfile(account), message: 'Your account is ready.' });
   }
   if (req.method === 'POST' && pathname === '/api/login') {
     if (!allowAttempt(req)) return send(res, 429, { error: 'Too many login attempts. Please try again later.' });
@@ -438,7 +314,6 @@ async function handleApi(req, res, pathname) {
       if (paused && await passwordMatches(paused.account, input.password)) return send(res, 403, { error: `This account is paused until ${new Date(paused.resumeAt).toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' })} UTC.` });
     }
     if (!account || candidate.length !== expected.length || !crypto.timingSafeEqual(candidate, expected)) return send(res, 401, { error: 'The username or password is incorrect.' });
-    if (account.email && account.emailVerified !== true) return send(res, 403, { error: 'Verify your email address before logging in.' });
     await setSession(res, account.id);
     return send(res, 200, { user: privateProfile(account) });
   }
@@ -454,14 +329,19 @@ async function handleApi(req, res, pathname) {
     if (!validUsername(username)) return send(res, 400, { error: 'Use 3–24 letters, numbers, dots, dashes, underscores, or single spaces for your username.' });
     const usernameChanged = username.toLowerCase() !== account.profile.username.toLowerCase();
     if (usernameChanged && (accounts.some(item => item.id !== account.id && item.profile.username.toLowerCase() === username.toLowerCase()) || pausedAccounts.some(item => item.account.profile.username.toLowerCase() === username.toLowerCase()))) return send(res, 409, { error: 'That username is already taken or reserved by a paused account.' });
-    if (usernameChanged) {
-      const lastChanged = Number(account.profile.usernameLastChangedAt) || Date.now();
-      if (Date.now() - lastChanged < USERNAME_COOLDOWN_MS && input.useNamecardTicket !== true) return send(res, 429, { error: 'Username changes have a one-week cooldown. Use a free Namecard ticket to change it now.' });
-    }
+    const lastChanged = Number(account.profile.usernameLastChangedAt) || Date.now();
+    const onUsernameCooldown = usernameChanged && Date.now() - lastChanged < USERNAME_COOLDOWN_MS;
+    const useNamecardTicket = usernameChanged && input.useNamecardTicket === true;
+    if (onUsernameCooldown && (!useNamecardTicket || Number(account.tickets?.namecard) < 1)) return send(res, 429, { error: 'Username changes have a one-week cooldown. Get a Namecard ticket in the Shop to change it now.' });
+    if (useNamecardTicket && Number(account.tickets?.namecard) < 1) return send(res, 403, { error: 'You do not have a Namecard ticket. Get one in the Shop.' });
     const realName = text(input.realName, 80);
-    if (account.profile.realName && realName !== account.profile.realName && input.useWhoTicket !== true) return send(res, 403, { error: 'Your real name is permanent. Use a free WHO? ticket to change it.' });
+    const realNameChanged = Boolean(account.profile.realName) && realName !== account.profile.realName;
+    if (realNameChanged && (input.useWhoTicket !== true || Number(account.tickets?.who) < 1)) return send(res, 403, { error: 'Your real name is permanent. Get a WHO? ticket in the Shop to change it.' });
+    const updatedProfile = cleanProfile(input, account.profile);
+    if (useNamecardTicket) account.tickets.namecard--;
+    if (realNameChanged) account.tickets.who--;
     if (usernameChanged) account.profile.usernameLastChangedAt = Date.now();
-    account.profile = cleanProfile(input, account.profile);
+    account.profile = updatedProfile;
     await saveAccounts();
     return send(res, 200, { user: privateProfile(account) });
   }
@@ -473,10 +353,6 @@ async function handleApi(req, res, pathname) {
     if (!await passwordMatches(account, input.password)) return send(res, 401, { error: 'Your password is incorrect.' });
     const now = Date.now();
     const backup = JSON.parse(JSON.stringify(account));
-    backup.emailVerificationTokenHash = '';
-    backup.emailVerificationExpiresAt = 0;
-    backup.passwordResetTokenHash = '';
-    backup.passwordResetExpiresAt = 0;
     const previousAccounts = accounts;
     const previousPaused = pausedAccounts;
     accounts = accounts.filter(item => item.id !== account.id);
@@ -520,9 +396,8 @@ async function handleApi(req, res, pathname) {
     const target = accounts.find(item => item.id === input.accountId);
     const teamKey = input.teamKey === 'owner' || input.teamKey === 'assistant' ? input.teamKey : '';
     if (!target) return send(res, 404, { error: 'That account could not be found.' });
-    if (teamKey && target.emailVerified !== true) return send(res, 403, { error: 'Only accounts with verified email can be added to the Solaris List.' });
     if (target.role === 'owner' && teamKey !== 'owner') return send(res, 403, { error: 'The Owner account must keep the Owner team position.' });
-    if (teamKey === 'owner' && target.role !== 'owner') return send(res, 403, { error: 'Only the verified Owner account can hold the Owner team position.' });
+    if (teamKey === 'owner' && target.role !== 'owner') return send(res, 403, { error: 'Only the Owner account can hold the Owner team position.' });
     if (teamKey && accounts.some(item => item.id !== target.id && item.profile.teamKey === teamKey)) return send(res, 409, { error: 'That team position is already connected to an account.' });
     target.profile.teamKey = teamKey || null;
     await saveAccounts();

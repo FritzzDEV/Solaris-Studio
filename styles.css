@@ -553,10 +553,7 @@ dialog::backdrop{background:var(--backdrop)}
 .member-profile-link{display:inline-flex;align-items:center;gap:.4rem;margin-top:.8rem;color:var(--ember);font-size:.82rem;font-weight:700;text-decoration:none}
 .member-profile-link:hover{text-decoration:underline}
 .profile-role-chip{display:inline-flex;margin-top:.35rem;padding:.25rem .65rem;border:1px solid color-mix(in srgb,var(--ember) 45%,var(--line));border-radius:999px;background:color-mix(in srgb,var(--ember) 9%,var(--surface));color:var(--ember);font-size:.73rem;font-weight:750}
-.email-settings-form{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:.75rem}
-.email-settings-form label{display:grid;gap:.35rem;font-size:.9rem;font-weight:600}
-.email-settings-form input,.team-admin-row select{width:100%;min-width:0;padding:.68rem .8rem;border:1.5px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:400 .95rem/1.5 var(--font-body)}
-.email-status{color:var(--muted);font-size:.88rem}
+.team-admin-row select{width:100%;min-width:0;padding:.68rem .8rem;border:1.5px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:400 .95rem/1.5 var(--font-body)}
 .team-admin-list{display:grid;gap:.55rem;margin-top:.75rem}
 .team-admin-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,.55fr);align-items:center;gap:1rem;padding:.75rem .85rem;border:1px solid var(--line);border-radius:12px;background:var(--bg)}
 .team-admin-row>span{display:grid;gap:.2rem;min-width:0}
@@ -567,9 +564,7 @@ dialog::backdrop{background:var(--backdrop)}
 .owner-setup summary{color:var(--muted);font-size:.85rem;font-weight:650;cursor:pointer}
 .owner-setup label{margin-top:.65rem}
 .owner-setup small{display:block;margin-top:.4rem;color:var(--muted)}
-.text-button{justify-self:start;padding:.35rem 0;border:0;background:transparent;color:var(--ember);font:600 .87rem var(--font-body);cursor:pointer}
-.text-button:hover{text-decoration:underline}
-@media(max-width:600px){.email-settings-form,.team-admin-row{grid-template-columns:1fr}.email-settings-form>.btn{width:100%}}
+@media(max-width:600px){.team-admin-row{grid-template-columns:1fr}}
 
 /* Account pause and deletion controls */
 .danger-zone{border-color:color-mix(in srgb,#bd3138 62%,var(--line));background:linear-gradient(145deg,color-mix(in srgb,#bd3138 9%,var(--surface)),var(--surface) 72%)}
@@ -621,6 +616,25 @@ dialog::backdrop{background:var(--backdrop)}
 .project-download-links h2{flex-basis:100%;margin:0}
 .text-link{display:inline-flex;align-items:center;gap:.35rem;color:var(--ember);font-weight:700;text-decoration:none}
 .text-link:hover{text-decoration:underline}
+.real-name-warning{margin:.5rem 0 .85rem;padding:.75rem .85rem;border-left:3px solid #d48b20;border-radius:0 9px 9px 0;background:color-mix(in srgb,#d48b20 10%,var(--surface));color:var(--ink);font-size:.84rem;line-height:1.5}
+.owner-claim-panel{border-color:color-mix(in srgb,var(--ember) 35%,var(--line));background:linear-gradient(135deg,color-mix(in srgb,var(--ember) 7%,var(--surface)),var(--surface) 70%)}
+#owner-claim-form{display:grid;gap:.6rem;max-width:520px}
+#owner-claim-form label{display:grid;gap:.35rem;font-size:.9rem;font-weight:600}
+#owner-claim-form input{width:100%;padding:.68rem .8rem;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:400 .95rem var(--font-body)}
+.shop-intro{max-width:850px;margin:0 0 1.4rem;padding:clamp(1.25rem,3vw,2rem);border:1px solid var(--line);border-radius:20px;background:linear-gradient(135deg,color-mix(in srgb,var(--ember) 10%,var(--surface)),var(--surface) 70%)}
+.shop-intro h2{margin:0 0 .6rem;font:700 clamp(1.3rem,3vw,1.8rem)/1.2 var(--font-display)}
+.shop-intro p{max-width:68ch;color:var(--muted);line-height:1.65}
+.shop-intro p+p{margin-top:.7rem}
+.shop-ticket-list{display:grid;gap:.9rem;max-width:850px}
+.shop-ticket-card{display:flex;align-items:center;gap:1rem;padding:1.2rem;border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:0 12px 30px color-mix(in srgb,var(--ink) 5%,transparent)}
+.shop-ticket-mark{display:grid;place-items:center;flex:0 0 3.4rem;width:3.4rem;height:3.4rem;border-radius:14px;background:color-mix(in srgb,var(--ember) 14%,var(--surface));color:var(--ember);font-size:1.55rem;font-weight:800}
+.shop-ticket-copy{flex:1;min-width:0}
+.shop-ticket-copy .section-eyebrow{margin:0 0 .2rem;font-size:.62rem}
+.shop-ticket-copy h2{margin:0 0 .35rem;font:700 1.05rem var(--font-display)}
+.shop-ticket-copy p{margin:0;color:var(--muted);font-size:.9rem;line-height:1.5}
+.shop-ticket-count{display:block;margin-top:.45rem;color:var(--muted);font-size:.8rem}
+.shop-ticket-count strong{color:var(--ink)}
+@media(max-width:600px){.shop-ticket-card{align-items:flex-start;flex-wrap:wrap}.shop-ticket-card>.btn,.shop-ticket-card>a{width:100%;margin-left:0}}
 
 /* Individual project pages */
 .project-page{padding:1.25rem 0 3rem;overflow:hidden}

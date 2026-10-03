@@ -10,7 +10,6 @@
     "node": ">=20"
   },
   "dependencies": {
-    "nodemailer": "^10.0.13",
     "pg": "^8.16.3"
   }
 }

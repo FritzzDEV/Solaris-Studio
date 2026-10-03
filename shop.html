@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#fff1d6">
+  <link rel="icon" type="image/png" href="assets/golden-spiral-sun-icon.png">
+  <title>Shop | Solaris Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body data-page="shop">
+  <header class="top"><div class="top-in">
+    <a class="brand" href="index.html" aria-label="Solaris Studio home">
+      <img class="brand-icon" src="assets/golden-spiral-sun-icon.png" alt="">
+      <span class="brand-name">Solaris Studio</span>
+    </a>
+    <button class="icon-btn menu-btn" data-menu aria-expanded="false" aria-controls="nav">Menu</button>
+    <nav class="nav" id="nav" aria-label="Main"><ul id="nav-list"></ul></nav>
+    <button class="icon-btn" data-theme-toggle aria-label="Switch between light and dark theme">Theme</button>
+    <div class="profile-wrap"><button class="profile-button" id="profile-button" aria-expanded="false" aria-controls="profile-popover"></button><section class="profile-popover" id="profile-popover" aria-label="Account preview" hidden></section></div>
+  </div></header>
+  <main id="app" tabindex="-1"></main>
+  <footer class="foot"><div class="foot-in"><span>&copy; 2026 Solaris Studio.</span><span>Building worlds, one project at a time.</span></div></footer>
+  <dialog id="dlg" aria-label="Project details"><button class="dlg-x" data-close aria-label="Close">&times;</button><div class="dlg-body" id="dlg-body"></div></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
