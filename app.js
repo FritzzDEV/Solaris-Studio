@@ -447,7 +447,9 @@
   function viewedUserRoleManager(user) {
     if (currentUser?.accountRole !== 'owner' || user.accountRole === 'owner') return '';
     const assignableRoles = [['assistant','Assistant'],['ai-assistant','AI Assistant'],['developer','Developer'],['member','Member']];
-    return `<section class="account-panel account-panel-wide profile-role-manager" data-role-row data-account-id="${esc(user.id)}"><h2>Manage account roles</h2><p>Assign this account a studio role. Visitor is reserved for guests, and Owner access cannot be assigned here.</p><div class="profile-role-manager-fields"><label>Primary role<select data-primary-role aria-label="Primary role for ${esc(user.username)}">${assignableRoles.map(([value,label]) => `<option value="${value}"${user.primaryRole === value ? ' selected' : ''}>${label}</option>`).join('')}</select></label><label>Secondary role tags<input data-secondary-roles maxlength="640" value="${esc((user.secondaryRoles || []).join(', '))}" placeholder="Scripter, Modeler, Tester…"${user.primaryRole === 'member' ? ' disabled' : ''}></label><button class="btn btn-primary" type="button" data-save-viewed-user-roles>Save roles</button></div><p class="form-message" data-viewed-role-message role="status"></p></section>`;
+    const currentRole = PRIMARY_ROLE_LABELS[user.primaryRole] || 'Member';
+    const secondaryHelp = user.primaryRole === 'member' ? 'Available when this account has a studio role.' : 'Separate staff roles with commas.';
+    return `<section class="account-panel account-panel-wide profile-role-manager"><div class="panel-heading"><div><span class="section-eyebrow">OWNER CONTROLS</span><h2>Manage account roles</h2><p>Set this account’s primary studio role and optional secondary role tags. Visitor and Owner cannot be assigned.</p></div></div><div class="team-admin-row team-role-row profile-role-row" data-role-row data-account-id="${esc(user.id)}"><span class="team-admin-identity">${avatar(user.username,'profile-role-avatar',user.avatarImage)}<span><strong>${esc(user.username)}</strong><small>Current role: ${esc(currentRole)}</small></span></span><label>Primary role<select data-primary-role aria-label="Primary role for ${esc(user.username)}">${assignableRoles.map(([value,label]) => `<option value="${value}"${user.primaryRole === value ? ' selected' : ''}>${label}</option>`).join('')}</select></label><label>Secondary role tags<input data-secondary-roles maxlength="640" value="${esc((user.secondaryRoles || []).join(', '))}" placeholder="Scripter, Modeler, Tester…"${user.primaryRole === 'member' ? ' disabled' : ''}><small data-secondary-role-help>${secondaryHelp}</small></label><button class="btn btn-primary btn-sm" type="button" data-save-viewed-user-roles>Save role changes</button><p class="form-message profile-role-message" data-viewed-role-message role="status"></p></div></section>`;
   }
   async function saveViewedUserRoles(button) {
     const row = button.closest('[data-role-row]');
@@ -955,6 +957,8 @@
       if (secondaryRoles) {
         secondaryRoles.disabled = roleSelect.value === 'member';
         if (secondaryRoles.disabled) secondaryRoles.value = '';
+        const help = row.querySelector('[data-secondary-role-help]');
+        if (help) help.textContent = secondaryRoles.disabled ? 'Available when this account has a studio role.' : 'Separate staff roles with commas.';
       }
       return;
     }
