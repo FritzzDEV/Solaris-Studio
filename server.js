@@ -8,7 +8,7 @@ const { promisify } = require('node:util');
 
 const scrypt = promisify(crypto.scrypt);
 const ROOT = __dirname;
-const DATA_DIR = path.join(ROOT, 'data');
+const DATA_DIR = process.env.SOLARIS_DATA_DIR ? path.resolve(process.env.SOLARIS_DATA_DIR) : path.join(ROOT, 'data');
 const STORE_PATH = path.join(DATA_DIR, 'accounts.json');
 const PORT = Number(process.env.PORT) || 4173;
 const HOST = '0.0.0.0';
@@ -18,6 +18,7 @@ const STATIC_FILES = new Set(['index.html', 'list.html', 'games.html', 'project.
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.webp': 'image/webp', '.png': 'image/png' };
 
 let accounts = [];
+let pool = null;
 const sessions = new Map();
 const attempts = new Map();
 let writeQueue = Promise.resolve();
@@ -52,26 +53,38 @@ function checkOrigin(req) {
 function parseCookies(header = '') {
   return Object.fromEntries(header.split(';').map(part => part.trim().split(/=(.*)/s).slice(0, 2)).filter(pair => pair.length === 2));
 }
-function getAccount(req) {
+function sessionHash(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+async function getAccount(req) {
   const token = parseCookies(req.headers.cookie).solaris_session;
-  const session = token && sessions.get(token);
-  if (!session || session.expires < Date.now()) { if (token) sessions.delete(token); return null; }
+  if (!token) return null;
+  let session = sessions.get(token);
+  if ((!session || session.expires < Date.now()) && pool) {
+    const result = await pool.query('SELECT account_id, expires_at FROM solaris_sessions WHERE token_hash = $1 AND expires_at > $2', [sessionHash(token), Date.now()]);
+    const row = result.rows[0];
+    session = row ? { accountId: row.account_id, expires: Number(row.expires_at) } : null;
+    if (session) sessions.set(token, session);
+  }
+  if (!session || session.expires < Date.now()) { sessions.delete(token); return null; }
   return accounts.find(account => account.id === session.accountId) || null;
 }
 function publicProfile(account) {
   const { id, profile } = account;
   return { id, ...profile };
 }
-function setSession(res, accountId) {
+async function setSession(res, accountId) {
   const token = crypto.randomBytes(32).toString('base64url');
   const expires = Date.now() + SESSION_MS;
   sessions.set(token, { accountId, expires });
+  if (pool) await pool.query('INSERT INTO solaris_sessions (token_hash, account_id, expires_at) VALUES ($1, $2, $3)', [sessionHash(token), accountId, expires]);
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
   res.setHeader('Set-Cookie', `solaris_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(SESSION_MS / 1000)}${secure}`);
 }
-function clearSession(req, res) {
+async function clearSession(req, res) {
   const token = parseCookies(req.headers.cookie).solaris_session;
   if (token) sessions.delete(token);
+  if (token && pool) await pool.query('DELETE FROM solaris_sessions WHERE token_hash = $1', [sessionHash(token)]);
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
   res.setHeader('Set-Cookie', `solaris_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`);
 }
@@ -134,8 +147,12 @@ function cleanProfile(input, existing = {}) {
   };
 }
 async function saveAccounts() {
-  const snapshot = JSON.stringify(accounts, null, 2);
-  writeQueue = writeQueue.then(async () => {
+  const snapshot = JSON.stringify(accounts);
+  writeQueue = writeQueue.catch(() => {}).then(async () => {
+    if (pool) {
+      await pool.query('INSERT INTO solaris_account_store (store_id, accounts) VALUES (1, $1::jsonb) ON CONFLICT (store_id) DO UPDATE SET accounts = EXCLUDED.accounts', [snapshot]);
+      return;
+    }
     await fs.mkdir(DATA_DIR, { recursive: true });
     const temporary = `${STORE_PATH}.${process.pid}.tmp`;
     await fs.writeFile(temporary, snapshot, { mode: 0o600 });
@@ -146,7 +163,7 @@ async function saveAccounts() {
 async function handleApi(req, res, pathname) {
   if (!checkOrigin(req)) return send(res, 403, { error: 'This request was not accepted.' });
   if (req.method === 'GET' && pathname === '/api/me') {
-    const account = getAccount(req);
+    const account = await getAccount(req);
     return send(res, 200, { user: account ? publicProfile(account) : null });
   }
   if (req.method === 'POST' && pathname === '/api/signup') {
@@ -162,7 +179,7 @@ async function handleApi(req, res, pathname) {
     const account = { id, salt, passwordHash, profile: cleanProfile({ ...input.profile, username }) };
     accounts.push(account);
     await saveAccounts();
-    setSession(res, id);
+    await setSession(res, id);
     return send(res, 201, { user: publicProfile(account) });
   }
   if (req.method === 'POST' && pathname === '/api/login') {
@@ -174,15 +191,15 @@ async function handleApi(req, res, pathname) {
     const expected = account ? Buffer.from(account.passwordHash, 'hex') : Buffer.alloc(64);
     const candidate = Buffer.from(await scrypt(typeof input.password === 'string' ? input.password.slice(0, 200) : '', salt, 64));
     if (!account || candidate.length !== expected.length || !crypto.timingSafeEqual(candidate, expected)) return send(res, 401, { error: 'The username or password is incorrect.' });
-    setSession(res, account.id);
+    await setSession(res, account.id);
     return send(res, 200, { user: publicProfile(account) });
   }
   if (req.method === 'POST' && pathname === '/api/logout') {
-    clearSession(req, res);
+    await clearSession(req, res);
     return send(res, 200, { user: null });
   }
   if (req.method === 'PUT' && pathname === '/api/profile') {
-    const account = getAccount(req);
+    const account = await getAccount(req);
     if (!account) return send(res, 401, { error: 'Please log in to update your profile.' });
     const input = await readBody(req);
     account.profile = cleanProfile(input, account.profile);
@@ -192,7 +209,7 @@ async function handleApi(req, res, pathname) {
   return send(res, 404, { error: 'Not found.' });
 }
 
-async function loadStore() {
+async function loadFileStore() {
   await fs.mkdir(DATA_DIR, { recursive: true });
   try {
     const stored = JSON.parse(await fs.readFile(STORE_PATH, 'utf8'));
@@ -201,6 +218,24 @@ async function loadStore() {
     if (error.code !== 'ENOENT') throw error;
     accounts = [];
   }
+}
+
+async function loadStore() {
+  if (!process.env.DATABASE_URL) return loadFileStore();
+
+  const { Pool } = require('pg');
+  pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  await pool.query('CREATE TABLE IF NOT EXISTS solaris_account_store (store_id SMALLINT PRIMARY KEY CHECK (store_id = 1), accounts JSONB NOT NULL)');
+  await pool.query('CREATE TABLE IF NOT EXISTS solaris_sessions (token_hash TEXT PRIMARY KEY, account_id TEXT NOT NULL, expires_at BIGINT NOT NULL)');
+  const result = await pool.query('SELECT accounts FROM solaris_account_store WHERE store_id = 1');
+  if (result.rows.length) {
+    accounts = Array.isArray(result.rows[0].accounts) ? result.rows[0].accounts : [];
+  } else {
+    // Import the existing JSON account store once when attaching a database.
+    await loadFileStore();
+    await saveAccounts();
+  }
+  await pool.query('DELETE FROM solaris_sessions WHERE expires_at <= $1', [Date.now()]);
 }
 
 const server = http.createServer(async (req, res) => {
@@ -220,9 +255,13 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-loadStore().then(() => server.listen(PORT, HOST, () => {
-  console.log(`Solaris Studio is running at http://localhost:${PORT}`);
-})).catch(error => {
+loadStore().then(() => {
+  if (process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL && !process.env.SOLARIS_DATA_DIR) {
+    console.warn('Account data is using local files and may be lost after a restart. Configure DATABASE_URL or a persistent SOLARIS_DATA_DIR.');
+  }
+  server.listen(PORT, HOST, () => console.log(`Solaris Studio is running at http://localhost:${PORT}`));
+}).catch(async error => {
+  if (pool) await pool.end().catch(() => {});
   console.error('Could not load the account store:', error.message);
   process.exitCode = 1;
 });
