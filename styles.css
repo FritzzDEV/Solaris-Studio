@@ -571,6 +571,33 @@ dialog::backdrop{background:var(--backdrop)}
 .text-button:hover{text-decoration:underline}
 @media(max-width:600px){.email-settings-form,.team-admin-row{grid-template-columns:1fr}.email-settings-form>.btn{width:100%}}
 
+/* Account pause and deletion controls */
+.danger-zone{border-color:color-mix(in srgb,#bd3138 62%,var(--line));background:linear-gradient(145deg,color-mix(in srgb,#bd3138 9%,var(--surface)),var(--surface) 72%)}
+.danger-zone h2{color:#b4232c;font-size:1.2rem}
+.danger-eyebrow{display:block;margin-bottom:.35rem;color:#b4232c;font-size:.7rem;font-weight:800;letter-spacing:.13em}
+.danger-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem;margin-top:1rem}
+.danger-button{display:grid;gap:.35rem;min-width:0;padding:1rem;border:1px solid color-mix(in srgb,#bd3138 40%,var(--line));border-radius:13px;background:color-mix(in srgb,#bd3138 5%,var(--surface));color:var(--ink);text-align:left;cursor:pointer;transition:background .16s,border-color .16s,transform .16s}
+.danger-button:hover{transform:translateY(-1px);border-color:#bd3138;background:color-mix(in srgb,#bd3138 10%,var(--surface))}
+.danger-button strong{color:#a91f28;font-size:.96rem}
+.danger-button span,.danger-retention-note{color:var(--muted);font-size:.83rem;line-height:1.5}
+.danger-retention-note{margin-top:.85rem}
+.account-danger-footer{display:flex;justify-content:flex-end;margin-top:1rem;padding-top:.85rem;border-top:1px solid color-mix(in srgb,#bd3138 28%,var(--line))}
+.account-danger-dialog{width:min(520px,92vw);max-width:92vw;border:1px solid color-mix(in srgb,#bd3138 55%,var(--line));background:var(--surface)}
+.account-danger-dialog-inner{position:relative;padding:clamp(1.2rem,4vw,1.8rem)}
+.account-danger-dialog-inner>h2{margin:.15rem 2rem .55rem 0;font:800 1.35rem/1.2 var(--font-display)}
+.account-danger-dialog-inner>p{margin-bottom:1.1rem;color:var(--muted);line-height:1.55}
+.danger-dialog-close{position:absolute;top:.9rem;right:.9rem}
+#account-danger-form{display:grid;gap:.7rem}
+#account-danger-form label{display:grid;gap:.35rem;font-size:.9rem;font-weight:600}
+#account-danger-form input{width:100%;padding:.68rem .8rem;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:400 .95rem var(--font-body)}
+#account-danger-form label strong{color:#b4232c}
+.danger-dialog-actions{display:flex;justify-content:flex-end;gap:.65rem;margin-top:.2rem}
+.btn-danger{border-color:#b4232c;background:#b4232c;color:white}
+.btn-danger:hover{border-color:#941b22;background:#941b22;color:white}
+.btn-pause{border-color:#9a4b20;background:#9a4b20;color:white}
+.btn-pause:hover{border-color:#7c3b19;background:#7c3b19;color:white}
+@media(max-width:600px){.danger-actions{grid-template-columns:1fr}.danger-dialog-actions{flex-direction:column-reverse}.danger-dialog-actions .btn{width:100%}}
+
 /* Group introduction and downloadable extras */
 .section-eyebrow{display:block;margin-bottom:.45rem;color:var(--ember);font-size:.7rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
 .group-intro,.download-intro{max-width:760px;margin:0 0 1.1rem;padding:clamp(1.25rem,3vw,2rem);border:1px solid var(--line);border-radius:20px;background:linear-gradient(135deg,color-mix(in srgb,var(--ember) 9%,var(--surface)),var(--surface) 70%)}

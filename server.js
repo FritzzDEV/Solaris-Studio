@@ -13,6 +13,7 @@ const STORE_PATH = path.join(DATA_DIR, 'accounts.json');
 const PORT = Number(process.env.PORT) || 4173;
 const HOST = '0.0.0.0';
 const SESSION_MS = 30 * 24 * 60 * 60 * 1000;
+const PAUSE_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 const EMAIL_TOKEN_MS = 24 * 60 * 60 * 1000;
 const RESET_TOKEN_MS = 60 * 60 * 1000;
 const USERNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
@@ -25,6 +26,7 @@ const TEAM_SLOTS = {
 };
 
 let accounts = [];
+let pausedAccounts = [];
 let pool = null;
 let mailer = null;
 const sessions = new Map();
@@ -103,6 +105,28 @@ function normalizeEmail(value) {
 }
 function validEmail(value) {
   return value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+async function passwordMatches(account, password) {
+  if (typeof password !== 'string' || password.length > 200) return false;
+  const expected = Buffer.from(account.passwordHash, 'hex');
+  const candidate = Buffer.from(await scrypt(password, account.salt, 64));
+  return expected.length === candidate.length && crypto.timingSafeEqual(expected, candidate);
+}
+function logEmailFailure(context, error) {
+  const cause = error && error.cause;
+  console.error(`[EMAIL SEND ERROR] ${context}`, {
+    name: error?.name || 'Error',
+    message: error?.message || String(error),
+    code: error?.code,
+    command: error?.command,
+    syscall: error?.syscall,
+    address: error?.address,
+    port: error?.port,
+    responseCode: error?.responseCode,
+    response: error?.response,
+    stack: error?.stack,
+    cause: cause ? { name: cause.name, message: cause.message, code: cause.code, stack: cause.stack } : undefined
+  });
 }
 function secureEqual(left, right) {
   const a = Buffer.from(String(left || ''));
@@ -217,7 +241,7 @@ function cleanProfile(input, existing = {}) {
   };
 }
 async function saveAccounts() {
-  const snapshot = JSON.stringify(accounts);
+  const snapshot = JSON.stringify({ accounts, pausedAccounts });
   writeQueue = writeQueue.catch(() => {}).then(async () => {
     if (pool) {
       await pool.query('INSERT INTO solaris_account_store (store_id, accounts) VALUES (1, $1::jsonb) ON CONFLICT (store_id) DO UPDATE SET accounts = EXCLUDED.accounts', [snapshot]);
@@ -230,8 +254,24 @@ async function saveAccounts() {
   });
   return writeQueue;
 }
+async function restoreExpiredAccounts() {
+  const now = Date.now();
+  const expired = pausedAccounts.filter(item => Number(item.resumeAt) <= now && item.account?.id);
+  if (!expired.length) return;
+  for (const item of expired) {
+    if (!accounts.some(account => account.id === item.account.id)) accounts.push(item.account);
+  }
+  pausedAccounts = pausedAccounts.filter(item => Number(item.resumeAt) > now);
+  await saveAccounts();
+}
+async function removeAccountSessions(accountId, req, res) {
+  for (const [token, session] of sessions) if (session.accountId === accountId) sessions.delete(token);
+  if (pool) await pool.query('DELETE FROM solaris_sessions WHERE account_id = $1', [accountId]);
+  await clearSession(req, res);
+}
 async function handleApi(req, res, pathname) {
   if (!checkOrigin(req)) return send(res, 403, { error: 'This request was not accepted.' });
+  await restoreExpiredAccounts();
   if (req.method === 'GET' && pathname === '/api/me') {
     const account = await getAccount(req);
     return send(res, 200, { user: account ? privateProfile(account) : null });
@@ -274,7 +314,7 @@ async function handleApi(req, res, pathname) {
     const input = await readBody(req);
     const email = normalizeEmail(input.email);
     if (!validEmail(email)) return send(res, 400, { error: 'Enter a valid email address.' });
-    if (accounts.some(item => item.id !== account.id && (item.email === email || item.pendingEmail === email))) return send(res, 409, { error: 'That email address is already connected to another account.' });
+    if (accounts.some(item => item.id !== account.id && (item.email === email || item.pendingEmail === email)) || pausedAccounts.some(item => item.account.email === email || item.account.pendingEmail === email)) return send(res, 409, { error: 'That email address is already connected to another account.' });
     if (account.email === email && account.emailVerified) return send(res, 200, { message: 'That email is already verified.' });
     const token = crypto.randomBytes(32).toString('base64url');
     const previous = { pendingEmail: account.pendingEmail, emailVerificationTokenHash: account.emailVerificationTokenHash, emailVerificationExpiresAt: account.emailVerificationExpiresAt };
@@ -287,6 +327,7 @@ async function handleApi(req, res, pathname) {
     } catch (error) {
       Object.assign(account, previous);
       await saveAccounts();
+      logEmailFailure('email change verification', error);
       return send(res, error.status || 503, { error: error.status ? error.message : 'The verification email could not be sent. Check the mail server settings and try again.' });
     }
     return send(res, 200, { message: `A verification link was sent to ${email}.` });
@@ -296,13 +337,15 @@ async function handleApi(req, res, pathname) {
     const input = await readBody(req);
     const email = normalizeEmail(input.email);
     const account = accounts.find(item => item.pendingEmail === email && item.emailVerified !== true);
-    if (account && getMailer()) {
+    const transport = account ? getMailer() : null;
+    if (account && !transport) logEmailFailure('verification resend configuration', Object.assign(new Error('SMTP_HOST and EMAIL_FROM must be set to send verification email.'), { code: 'EMAIL_CONFIG_MISSING' }));
+    if (account && transport) {
       const token = crypto.randomBytes(32).toString('base64url');
       account.emailVerificationTokenHash = crypto.createHash('sha256').update(token).digest('hex');
       account.emailVerificationExpiresAt = Date.now() + EMAIL_TOKEN_MS;
       await saveAccounts();
       try { await sendAccountEmail(req, email, 'Verify your Solaris Studio account', token, 'verify'); }
-      catch (error) { console.error('Verification email could not be sent:', error.message); }
+      catch (error) { logEmailFailure('verification resend', error); }
     }
     return send(res, 200, { message: 'If an unverified account uses that email, a new verification link will be sent.' });
   }
@@ -311,13 +354,15 @@ async function handleApi(req, res, pathname) {
     const input = await readBody(req);
     const email = normalizeEmail(input.email);
     const account = accounts.find(item => item.email === email && item.emailVerified === true);
-    if (account && getMailer()) {
+    const transport = account ? getMailer() : null;
+    if (account && !transport) logEmailFailure('password reset configuration', Object.assign(new Error('SMTP_HOST and EMAIL_FROM must be set to send recovery email.'), { code: 'EMAIL_CONFIG_MISSING' }));
+    if (account && transport) {
       const token = crypto.randomBytes(32).toString('base64url');
       account.passwordResetTokenHash = crypto.createHash('sha256').update(token).digest('hex');
       account.passwordResetExpiresAt = Date.now() + RESET_TOKEN_MS;
       await saveAccounts();
       try { await sendAccountEmail(req, email, 'Reset your Solaris Studio password', token, 'reset'); }
-      catch (error) { console.error('Password reset email could not be sent:', error.message); }
+      catch (error) { logEmailFailure('password reset', error); }
     }
     return send(res, 200, { message: 'If a verified account uses that email, a password reset link will be sent.' });
   }
@@ -341,11 +386,14 @@ async function handleApi(req, res, pathname) {
     const input = await readBody(req);
     const username = text(input.username, 24);
     if (!validUsername(username)) return send(res, 400, { error: 'Use 3–24 letters, numbers, dots, dashes, underscores, or single spaces.' });
-    if (accounts.some(account => account.profile.username.toLowerCase() === username.toLowerCase())) return send(res, 409, { error: 'That username is already taken.' });
+    if (accounts.some(account => account.profile.username.toLowerCase() === username.toLowerCase()) || pausedAccounts.some(item => item.account.profile.username.toLowerCase() === username.toLowerCase())) return send(res, 409, { error: 'That username is already taken or temporarily reserved by a paused account.' });
     const email = normalizeEmail(input.email);
     if (!validEmail(email)) return send(res, 400, { error: 'Enter a valid email address.' });
-    if (accounts.some(account => account.email === email || account.pendingEmail === email)) return send(res, 409, { error: 'That email address is already connected to an account.' });
-    if (!getMailer()) return send(res, 503, { error: 'Email verification is not ready yet. The studio needs to configure its email service first.' });
+    if (accounts.some(account => account.email === email || account.pendingEmail === email) || pausedAccounts.some(item => item.account.email === email || item.account.pendingEmail === email)) return send(res, 409, { error: 'That email address is already connected to an account.' });
+    if (!getMailer()) {
+      logEmailFailure('signup verification configuration', Object.assign(new Error('SMTP_HOST and EMAIL_FROM must be set to send verification email.'), { code: 'EMAIL_CONFIG_MISSING' }));
+      return send(res, 503, { error: 'Email verification is not ready yet. The studio needs to configure its email service first.' });
+    }
     if (typeof input.password !== 'string' || input.password.length < 10 || input.password.length > 200) return send(res, 400, { error: 'Use a password between 10 and 200 characters.' });
     const ownerUsername = text(process.env.SOLARIS_OWNER_USERNAME, 24);
     const setupCode = String(input.ownerSetupCode || '');
@@ -370,7 +418,7 @@ async function handleApi(req, res, pathname) {
       await saveAccounts();
       await sendAccountEmail(req, email, 'Verify your Solaris Studio account', verificationToken, 'verify');
     } catch (error) {
-      console.error('EMAIL SEND ERROR:', error);
+      logEmailFailure('signup verification', error);
       accounts = accounts.filter(item => item.id !== id);
       await saveAccounts();
       return send(res, error.status || 503, { error: error.status ? error.message : 'The verification email could not be sent. Try again later.' });
@@ -385,6 +433,10 @@ async function handleApi(req, res, pathname) {
     const salt = account ? account.salt : '00000000000000000000000000000000';
     const expected = account ? Buffer.from(account.passwordHash, 'hex') : Buffer.alloc(64);
     const candidate = Buffer.from(await scrypt(typeof input.password === 'string' ? input.password.slice(0, 200) : '', salt, 64));
+    if (!account) {
+      const paused = pausedAccounts.find(item => item.account.profile.username.toLowerCase() === username);
+      if (paused && await passwordMatches(paused.account, input.password)) return send(res, 403, { error: `This account is paused until ${new Date(paused.resumeAt).toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' })} UTC.` });
+    }
     if (!account || candidate.length !== expected.length || !crypto.timingSafeEqual(candidate, expected)) return send(res, 401, { error: 'The username or password is incorrect.' });
     if (account.email && account.emailVerified !== true) return send(res, 403, { error: 'Verify your email address before logging in.' });
     await setSession(res, account.id);
@@ -401,7 +453,7 @@ async function handleApi(req, res, pathname) {
     const username = text(input.username, 24);
     if (!validUsername(username)) return send(res, 400, { error: 'Use 3–24 letters, numbers, dots, dashes, underscores, or single spaces for your username.' });
     const usernameChanged = username.toLowerCase() !== account.profile.username.toLowerCase();
-    if (usernameChanged && accounts.some(item => item.id !== account.id && item.profile.username.toLowerCase() === username.toLowerCase())) return send(res, 409, { error: 'That username is already taken.' });
+    if (usernameChanged && (accounts.some(item => item.id !== account.id && item.profile.username.toLowerCase() === username.toLowerCase()) || pausedAccounts.some(item => item.account.profile.username.toLowerCase() === username.toLowerCase()))) return send(res, 409, { error: 'That username is already taken or reserved by a paused account.' });
     if (usernameChanged) {
       const lastChanged = Number(account.profile.usernameLastChangedAt) || Date.now();
       if (Date.now() - lastChanged < USERNAME_COOLDOWN_MS && input.useNamecardTicket !== true) return send(res, 429, { error: 'Username changes have a one-week cooldown. Use a free Namecard ticket to change it now.' });
@@ -412,6 +464,54 @@ async function handleApi(req, res, pathname) {
     account.profile = cleanProfile(input, account.profile);
     await saveAccounts();
     return send(res, 200, { user: privateProfile(account) });
+  }
+  if (req.method === 'POST' && pathname === '/api/account/pause') {
+    const account = await getAccount(req);
+    if (!account) return send(res, 401, { error: 'Please log in to pause your account.' });
+    const input = await readBody(req);
+    if (input.confirmation !== 'PAUSE') return send(res, 400, { error: 'Type PAUSE exactly to confirm this action.' });
+    if (!await passwordMatches(account, input.password)) return send(res, 401, { error: 'Your password is incorrect.' });
+    const now = Date.now();
+    const backup = JSON.parse(JSON.stringify(account));
+    backup.emailVerificationTokenHash = '';
+    backup.emailVerificationExpiresAt = 0;
+    backup.passwordResetTokenHash = '';
+    backup.passwordResetExpiresAt = 0;
+    const previousAccounts = accounts;
+    const previousPaused = pausedAccounts;
+    accounts = accounts.filter(item => item.id !== account.id);
+    pausedAccounts = [...pausedAccounts.filter(item => item.account.id !== account.id), { account: backup, pausedAt: now, resumeAt: now + PAUSE_DURATION_MS }];
+    try {
+      await saveAccounts();
+      await removeAccountSessions(account.id, req, res);
+    } catch (error) {
+      accounts = previousAccounts;
+      pausedAccounts = previousPaused;
+      await saveAccounts();
+      throw error;
+    }
+    return send(res, 200, { message: `Your account is paused for 30 days. You can log back in after ${new Date(now + PAUSE_DURATION_MS).toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' })} UTC.` });
+  }
+  if (req.method === 'POST' && pathname === '/api/account/delete') {
+    const account = await getAccount(req);
+    if (!account) return send(res, 401, { error: 'Please log in to delete your account.' });
+    const input = await readBody(req);
+    if (input.confirmation !== 'DELETE') return send(res, 400, { error: 'Type DELETE exactly to confirm permanent deletion.' });
+    if (!await passwordMatches(account, input.password)) return send(res, 401, { error: 'Your password is incorrect.' });
+    const previousAccounts = accounts;
+    const previousPaused = pausedAccounts;
+    accounts = accounts.filter(item => item.id !== account.id);
+    pausedAccounts = pausedAccounts.filter(item => item.account.id !== account.id);
+    try {
+      await saveAccounts();
+      await removeAccountSessions(account.id, req, res);
+    } catch (error) {
+      accounts = previousAccounts;
+      pausedAccounts = previousPaused;
+      await saveAccounts();
+      throw error;
+    }
+    return send(res, 200, { message: 'Your account and Solaris pause backups have been permanently deleted.' });
   }
   if (req.method === 'PUT' && pathname === '/api/admin/team-member') {
     const owner = await getAccount(req);
@@ -433,14 +533,21 @@ async function handleApi(req, res, pathname) {
 
 async function loadFileStore() {
   await fs.mkdir(DATA_DIR, { recursive: true });
+  let stored;
   try {
-    const stored = JSON.parse(await fs.readFile(STORE_PATH, 'utf8'));
-    accounts = Array.isArray(stored) ? stored.filter(account => account && account.id && account.profile && account.passwordHash && account.salt) : [];
+    stored = JSON.parse(await fs.readFile(STORE_PATH, 'utf8'));
   } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-    accounts = [];
+    if (error.code === 'ENOENT') { accounts = []; pausedAccounts = []; return; }
+    throw error;
   }
-  if (accounts.reduce((changed, account) => normalizeAccount(account) || changed, false)) await saveAccounts();
+  const savedAccounts = Array.isArray(stored) ? stored : Array.isArray(stored?.accounts) ? stored.accounts : [];
+  accounts = savedAccounts.filter(account => account && account.id && account.profile && account.passwordHash && account.salt);
+  pausedAccounts = Array.isArray(stored?.pausedAccounts) ? stored.pausedAccounts.filter(item => item?.account?.id && item.account.profile && item.account.passwordHash && item.account.salt && Number(item.resumeAt) > 0) : [];
+  let changed = Array.isArray(stored);
+  changed = accounts.reduce((didChange, account) => normalizeAccount(account) || didChange, changed);
+  changed = pausedAccounts.reduce((didChange, item) => normalizeAccount(item.account) || didChange, changed);
+  // Migrate legacy account arrays without dropping any existing profile data.
+  if (changed) await saveAccounts();
 }
 
 async function loadStore() {
@@ -452,8 +559,14 @@ async function loadStore() {
   await pool.query('CREATE TABLE IF NOT EXISTS solaris_sessions (token_hash TEXT PRIMARY KEY, account_id TEXT NOT NULL, expires_at BIGINT NOT NULL)');
   const result = await pool.query('SELECT accounts FROM solaris_account_store WHERE store_id = 1');
   if (result.rows.length) {
-    accounts = Array.isArray(result.rows[0].accounts) ? result.rows[0].accounts : [];
-    if (accounts.reduce((changed, account) => normalizeAccount(account) || changed, false)) await saveAccounts();
+    const stored = result.rows[0].accounts;
+    const savedAccounts = Array.isArray(stored) ? stored : Array.isArray(stored?.accounts) ? stored.accounts : [];
+    accounts = savedAccounts.filter(account => account && account.id && account.profile && account.passwordHash && account.salt);
+    pausedAccounts = Array.isArray(stored?.pausedAccounts) ? stored.pausedAccounts.filter(item => item?.account?.id && item.account.profile && item.account.passwordHash && item.account.salt && Number(item.resumeAt) > 0) : [];
+    let changed = Array.isArray(stored);
+    changed = accounts.reduce((didChange, account) => normalizeAccount(account) || didChange, changed);
+    changed = pausedAccounts.reduce((didChange, item) => normalizeAccount(item.account) || didChange, changed);
+    if (changed) await saveAccounts();
   } else {
     // Import the existing JSON account store once when attaching a database.
     await loadFileStore();
@@ -463,6 +576,7 @@ async function loadStore() {
 }
 
 const server = http.createServer(async (req, res) => {
+  const requestLabel = `${req.method} ${(req.url || '/').split('?')[0]}`;
   try {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url.pathname);
@@ -474,19 +588,21 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': requested.endsWith('.html') ? 'no-cache' : 'public, max-age=3600' });
     res.end(req.method === 'HEAD' ? undefined : data);
   } catch (error) {
+    console.error(`[REQUEST ERROR] ${requestLabel}`, error);
     if (!res.headersSent) send(res, error.status || 500, { error: error.status ? error.message : 'The server could not complete that request.' });
     else res.destroy();
   }
 });
 
-loadStore().then(() => {
+loadStore().then(async () => {
+  await restoreExpiredAccounts();
   if (process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL && !process.env.SOLARIS_DATA_DIR) {
     console.warn('Account data is using local files and may be lost after a restart. Configure DATABASE_URL or a persistent SOLARIS_DATA_DIR.');
   }
   server.listen(PORT, HOST, () => console.log(`Solaris Studio is running at http://localhost:${PORT}`));
 }).catch(async error => {
   if (pool) await pool.end().catch(() => {});
-  console.error('Could not load the account store:', error.message);
+  console.error('Could not load the account store:', error);
   process.exitCode = 1;
 });
 

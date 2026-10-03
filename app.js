@@ -249,6 +249,12 @@
       list.innerHTML = '';
     }
   }
+  function dangerZone() {
+    return `<section class="account-panel account-panel-wide danger-zone"><span class="danger-eyebrow">ACCOUNT MANAGEMENT</span><h2>Danger zone</h2><p>Pause your account for 30 days, or permanently delete it and its Solaris pause backups.</p><div class="danger-actions"><button class="danger-button danger-button-pause" type="button" data-account-action="pause"><strong>Pause account</strong><span>Hide your profile and block logins for 30 days.</span></button><button class="danger-button danger-button-delete" type="button" data-account-action="delete"><strong>Delete account</strong><span>Permanently remove your account and its Solaris backups.</span></button></div><p class="danger-retention-note">Deletion clears account data and pause backups held by Solaris. Git history and backups retained separately by the hosting or database provider follow their own retention policies.</p><div class="account-danger-footer"><button class="btn btn-ghost btn-sm" data-logout>Log out</button></div></section>`;
+  }
+  function dangerDialog() {
+    return `<dialog class="account-danger-dialog" id="account-danger-dialog" aria-labelledby="account-danger-title"><div class="account-danger-dialog-inner"><button class="icon-btn danger-dialog-close" type="button" data-cancel-danger aria-label="Close confirmation">×</button><span class="danger-eyebrow">ACCOUNT MANAGEMENT</span><h2 id="account-danger-title">Confirm account action</h2><p id="account-danger-copy"></p><form id="account-danger-form"><label>Confirm your password<input name="password" type="password" required maxlength="200" autocomplete="current-password"></label><label>Type <strong id="account-danger-word"></strong> to confirm<input name="confirmation" required autocomplete="off"></label><p class="form-message" id="danger-action-message" role="status"></p><div class="danger-dialog-actions"><button class="btn btn-ghost" type="button" data-cancel-danger>Cancel</button><button class="btn btn-danger" id="account-danger-submit" type="submit">Confirm</button></div></form></div></dialog>`;
+  }
   function profileDashboard(user, isOwn = false) {
     const favorites = favoritesFor(user);
     const favoriteCards = [['game',favorites.game],['developer',favorites.developer],['artwork',favorites.artwork]].map(([type,item]) => favoriteCard(type,item)).filter(Boolean);
@@ -268,7 +274,7 @@
         <section class="account-panel"><h2>Dislikes</h2><p>${esc(user.dislikes || 'No dislikes added yet.')}</p></section>
         <section class="account-panel account-panel-wide"><h2>Favorites</h2>${favoriteCards.length ? `<div class="favorite-grid">${favoriteCards.join('')}</div>` : '<p class="empty-inline">No favorites added yet. Edit your profile to choose favorites.</p>'}</section>
         <section class="account-panel account-panel-wide"><h2>Installed games</h2><div class="tag-list">${installed}</div></section>${security}${admin}
-      </div>${isOwn ? `<p class="account-footnote">Your profile is saved by the Solaris server. Real name and profile details are optional.</p><div class="account-logout-footer"><button class="btn btn-ghost btn-sm" data-logout>Log out</button></div>` : ''}</div>`;
+      </div>${isOwn ? `<p class="account-footnote">Your profile is saved by the Solaris server. Real name and profile details are optional.</p>${dangerZone()}${dangerDialog()}` : ''}</div>`;
   }
   function profileEditor(user) {
     const socials = socialRowsMarkup(user.socials);
@@ -516,6 +522,8 @@
     const addSocial = event.target.closest('[data-add-social]');
     const removeSocial = event.target.closest('[data-remove-social]');
     const profileOptions = event.target.closest('[data-profile-options]');
+    const accountAction = event.target.closest('[data-account-action]');
+    const cancelDanger = event.target.closest('[data-cancel-danger]');
     const memberFilterButton = event.target.closest('[data-member-filter]');
     const openImage = event.target.closest('[data-open-image]');
     const cropCancel = event.target.closest('[data-crop-cancel]');
@@ -546,6 +554,27 @@
       const menu = $('#profile-options'), open = menu.hidden;
       menu.hidden = !open; profileOptions.setAttribute('aria-expanded',String(open)); return;
     }
+    if (accountAction) {
+      const action = accountAction.dataset.accountAction;
+      const dialog = $('#account-danger-dialog');
+      const form = $('#account-danger-form');
+      const pause = action === 'pause';
+      form.dataset.action = action;
+      form.reset();
+      setMessage('#danger-action-message','',false);
+      $('#account-danger-title').textContent = pause ? 'Pause your account?' : 'Permanently delete your account?';
+      $('#account-danger-copy').textContent = pause
+        ? 'Your profile will be removed from the site and kept in a private backup for 30 days. You cannot log in during that time. After 30 days, the account and profile will be restored so you can log in again.'
+        : 'This permanently removes your account and any Solaris pause backups. This cannot be undone. Hosting-provider or repository backups have separate retention rules.';
+      $('#account-danger-word').textContent = pause ? 'PAUSE' : 'DELETE';
+      $('#account-danger-submit').textContent = pause ? 'Pause account' : 'Delete account';
+      $('#account-danger-submit').classList.toggle('btn-danger',!pause);
+      $('#account-danger-submit').classList.toggle('btn-pause',pause);
+      dialog.showModal();
+      $('[name="password"]',form)?.focus();
+      return;
+    }
+    if (cancelDanger) { $('#account-danger-dialog')?.close(); return; }
     if (openImage) {
       const input = $(`[data-image-input="${openImage.dataset.openImage}"]`,$('#profile-form'));
       input?.click(); return;
@@ -614,6 +643,21 @@
       const form = event.target, submit = $('button[type="submit"]',form); submit.disabled = true;
       try { const result = await api('/api/profile','PUT',accountFromForm(form)); currentUser = result.user; editingProfile = false; profilePreview(); showAccount(); toast('Your profile has been saved.'); }
       catch (error) { setMessage('#profile-message',error.message); }
+      finally { submit.disabled = false; }
+    } else if (event.target.id === 'account-danger-form') {
+      event.preventDefault();
+      const form = event.target, data = new FormData(form), submit = $('#account-danger-submit');
+      const action = form.dataset.action;
+      submit.disabled = true;
+      try {
+        const endpoint = action === 'pause' ? '/api/account/pause' : '/api/account/delete';
+        const result = await api(endpoint,'POST',{password:data.get('password'),confirmation:data.get('confirmation')});
+        $('#account-danger-dialog').close();
+        currentUser = null; editingProfile = false; profilePreview();
+        history.replaceState({},'',`${location.pathname}?mode=login`);
+        app.innerHTML = authView('login',result.message);
+        setMessage('#auth-message',result.message,false);
+      } catch (error) { setMessage('#danger-action-message',error.message); }
       finally { submit.disabled = false; }
     } else if (event.target.matches('[data-email-form]')) {
       event.preventDefault();
