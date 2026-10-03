@@ -370,6 +370,7 @@ async function handleApi(req, res, pathname) {
       await saveAccounts();
       await sendAccountEmail(req, email, 'Verify your Solaris Studio account', verificationToken, 'verify');
     } catch (error) {
+      console.error('EMAIL SEND ERROR:', error);
       accounts = accounts.filter(item => item.id !== id);
       await saveAccounts();
       return send(res, error.status || 503, { error: error.status ? error.message : 'The verification email could not be sent. Try again later.' });
