@@ -571,6 +571,18 @@ dialog::backdrop{background:var(--backdrop)}
 .owner-setup small{display:block;margin-top:.4rem;color:var(--muted)}
 @media(max-width:900px){.team-role-row{grid-template-columns:repeat(2,minmax(0,1fr))}.team-role-row .team-admin-identity{grid-column:1/-1}}
 @media(max-width:600px){.team-admin-row{grid-template-columns:1fr}.team-role-row .team-admin-identity{grid-column:auto}}
+.owner-team-manager .panel-heading{align-items:start}
+.owner-team-manager .panel-heading h2{margin-top:.22rem}
+.owner-team-manager .panel-heading p{max-width:58ch}
+.team-role-row-owner{grid-template-columns:minmax(190px,1fr) auto minmax(240px,1.2fr) auto;gap:1rem;padding:1rem 1.1rem;border-color:color-mix(in srgb,var(--gold) 46%,var(--line));background:linear-gradient(135deg,color-mix(in srgb,var(--gold) 8%,var(--surface)),var(--bg) 72%);box-shadow:0 9px 24px color-mix(in srgb,var(--ink) 5%,transparent)}
+.team-role-row-owner .team-admin-identity{display:flex;align-items:center;gap:.8rem;grid-column:auto}
+.team-role-row-owner .team-admin-identity>span:last-child{display:grid;gap:.15rem;min-width:0}
+.team-admin-avatar{width:44px;height:44px;border:2px solid color-mix(in srgb,var(--gold) 60%,var(--line));font-size:.75rem}
+.team-role-row-owner>.profile-role-chip{justify-self:start;margin:0}
+.team-role-row-owner label{display:grid;gap:.35rem;min-width:0;font-size:.8rem;font-weight:700}
+.team-role-row-owner label small{font-weight:400}
+@media(max-width:900px){.team-role-row-owner{grid-template-columns:minmax(0,1fr) auto}.team-role-row-owner label,.team-role-row-owner>button{grid-column:1/-1}.team-role-row-owner>button{justify-self:start}}
+@media(max-width:600px){.team-role-row-owner{grid-template-columns:1fr}.team-role-row-owner .team-admin-identity{grid-column:auto}.team-role-row-owner>button{width:100%}}
 
 /* Account pause and deletion controls */
 .danger-zone{border-color:color-mix(in srgb,#bd3138 62%,var(--line));background:linear-gradient(145deg,color-mix(in srgb,#bd3138 9%,var(--surface)),var(--surface) 72%)}

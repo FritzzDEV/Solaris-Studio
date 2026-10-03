@@ -416,23 +416,13 @@
     return rows.map(item => `<div class="social-editor-row"><label>Account name<input name="social-label" maxlength="30" placeholder="Instagram, Discord, website…" value="${esc(item.label || '')}"></label><label>Profile link<input name="social-url" type="url" maxlength="240" placeholder="https://…" value="${esc(item.url || '')}"></label><button class="icon-btn social-remove" type="button" data-remove-social aria-label="Remove social account">Remove</button></div>`).join('');
   }
   function ownerTeamManager() {
-    return `<section class="account-panel account-panel-wide owner-team-manager"><div class="panel-heading"><div><h2>Assign account roles</h2><p>Choose each account’s primary role. Member accounts get a Friend-Card; studio role tags are for staff roles. Visitor is reserved for guests.</p></div></div><p class="form-message" id="team-admin-message" role="status"></p><div class="team-admin-list" id="team-admin-list"><p class="empty-inline">Loading accounts…</p></div></section>`;
+    return `<section class="account-panel account-panel-wide owner-team-manager"><div class="panel-heading"><div><span class="section-eyebrow">OWNER CONTROLS</span><h2>Assign account roles</h2><p>Your account appears here for your own secondary role tags. Assign another account’s roles from their profile.</p></div></div><p class="form-message" id="team-admin-message" role="status"></p><div class="team-admin-list" id="team-admin-list"><p class="empty-inline">Loading your account…</p></div></section>`;
   }
   async function loadOwnerAccounts() {
     const list = $('#team-admin-list');
     if (!list) return;
-    try {
-      const result = await api('/api/admin/accounts');
-      list.innerHTML = result.accounts.length ? result.accounts.map(account => {
-        if (account.accountRole === 'owner') return `<div class="team-admin-row team-role-row team-role-row-owner" data-role-row data-account-id="${esc(account.id)}"><span class="team-admin-identity"><strong>${esc(account.username)}</strong><small>Owner permission</small></span><strong class="profile-role-chip">Owner</strong><input type="hidden" data-primary-role value="owner"><label>Secondary role tags<input data-secondary-roles maxlength="640" value="${esc((account.secondaryRoles || []).join(', '))}" placeholder="Coder, Modeler, Tester…"></label><button class="btn btn-ghost btn-sm" type="button" data-save-account-roles>Save roles</button></div>`;
-        const roleOptions = Object.entries(PRIMARY_ROLE_LABELS).map(([value,label]) => `<option value="${value}"${account.primaryRole === value ? ' selected' : ''}${value === 'visitor' ? ' disabled' : ''}>${esc(label)}${value === 'visitor' ? ' · guest only' : ''}</option>`).join('');
-        const isMember = account.primaryRole === 'member';
-        return `<div class="team-admin-row team-role-row" data-role-row data-account-id="${esc(account.id)}"><span class="team-admin-identity"><strong>${esc(account.username)}</strong><small>Registered account</small></span><label>Primary role<select data-primary-role aria-label="Primary role for ${esc(account.username)}">${roleOptions}</select></label><label>Secondary role tags<input data-secondary-roles maxlength="640" value="${esc((account.secondaryRoles || []).join(', '))}" placeholder="Scripter, Modeler, Tester…"${isMember ? ' disabled' : ''}></label><button class="btn btn-ghost btn-sm" type="button" data-save-account-roles>Save roles</button></div>`;
-      }).join('') : '<p class="empty-inline">No accounts have signed up yet.</p>';
-    } catch (error) {
-      setMessage('#team-admin-message',error.message);
-      list.innerHTML = '';
-    }
+    const account = currentUser?.accountRole === 'owner' ? currentUser : null;
+    list.innerHTML = account ? `<div class="team-admin-row team-role-row team-role-row-owner" data-role-row data-account-id="${esc(account.id)}"><span class="team-admin-identity">${avatar(account.username,'team-admin-avatar',account.avatarImage)}<span><strong>${esc(account.username)}</strong><small>Your protected Owner account</small></span></span><strong class="profile-role-chip">Owner</strong><input type="hidden" data-primary-role value="owner"><label>My secondary role tags<input data-secondary-roles maxlength="640" value="${esc((account.secondaryRoles || []).join(', '))}" placeholder="Coder, Modeler, Tester…"><small>Separate roles with commas.</small></label><button class="btn btn-primary btn-sm" type="button" data-save-account-roles>Save my tags</button></div>` : '<p class="empty-inline">Your Owner account could not be loaded.</p>';
   }
   async function saveAccountRoles(button) {
     const row = button.closest('[data-role-row]');
