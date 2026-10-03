@@ -18,6 +18,13 @@
     ]
   };
   const ROUTES = [['home','Home','index.html'],['list','List','list.html'],['games','Games','games.html'],['updates','Updates','updates.html'],['arts','Arts','arts.html'],['groups','Groups','groups.html'],['download','Download','download.html'],['shop','Shop','shop.html']];
+  const PRIMARY_ROLE_LABELS = {assistant:'Assistant','ai-assistant':'AI Assistant',developer:'Developer',member:'Member',visitor:'Visitor'};
+  const PRIMARY_ROLE_EXPLANATIONS = {
+    assistant:'Supports studio coordination and helps keep Solaris projects moving.',
+    'ai-assistant':'An AI contributor that helps with Solaris Studio work under human direction.',
+    developer:'Builds, tests, or maintains Solaris Studio projects.'
+  };
+  const SECONDARY_ROLE_TAGS = ['Scripter','Coder','Modeler','Tester','Updater','Announcer','Debugger','App tester','Artist'];
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -26,6 +33,11 @@
   const page = document.body.dataset.page || 'home';
   const titles = {home:'',list:'List',games:'Games',updates:'Updates',account:'Profile',arts:'Arts',groups:'Groups',download:'Download',shop:'Shop',project:'Project',artwork:'Artwork'};
   let currentUser = null;
+  let isGuest = new URLSearchParams(location.search).get('guest') === '1';
+  try {
+    isGuest = isGuest || sessionStorage.getItem('solaris-guest') === '1';
+    if (isGuest) sessionStorage.setItem('solaris-guest','1');
+  } catch (_) {}
   let editingProfile = false;
   let cropSession = null;
   let cropDialog = null;
@@ -55,21 +67,20 @@
       <div class="game-body"><div class="game-top"><div class="game-card-title">${projectIcon(game)}<h3>${esc(game.name)}</h3></div>${badge(game.status)}</div><p class="meta">${esc(game.genre)}${game.version ? ` · ${esc(game.version)}` : ''}</p>
       <p>${esc(game.blurb)}</p><a class="btn btn-ghost btn-sm" href="project.html?id=${encodeURIComponent(game.id)}">Project details</a></div></article>`;
   }
-  const memberFilterOptions = ['Coder / Scripter','Modeler','Tester','Artist','Updater','Announcer',...DATA.games.map(game => game.name)];
+  const memberFilterOptions = ['Assistant','AI Assistant','Developer','Member',...SECONDARY_ROLE_TAGS,...DATA.games.map(game => game.name)];
   function tagsForMember(member) {
-    const roleText = member.roles.join(' ').toLowerCase();
-    const tags = [];
-    if (/coder|scripter/.test(roleText)) tags.push('Coder / Scripter');
-    if (/modeler|modeller/.test(roleText)) tags.push('Modeler');
-    if (/tester/.test(roleText)) tags.push('Tester');
-    if (/artist/.test(roleText)) tags.push('Artist');
-    if (/updater/.test(roleText)) tags.push('Updater');
-    if (/announcer/.test(roleText)) tags.push('Announcer');
-    return [...new Set([...tags,...member.projects])];
+    return [...new Set([...(member.roles || []),...(member.projects || [])])];
+  }
+  function renderMemberFilters() {
+    const bar = $('.member-filter-bar');
+    if (!bar) return;
+    const tags = [...new Set([...memberFilterOptions,...DATA.members.flatMap(member => tagsForMember(member))])];
+    if (activeMemberTag !== 'All' && !tags.includes(activeMemberTag)) activeMemberTag = 'All';
+    bar.innerHTML = `<button class="member-filter-chip" type="button" data-member-filter="All" aria-pressed="${activeMemberTag === 'All'}">All</button>${tags.map(tag => `<button class="member-filter-chip" type="button" data-member-filter="${esc(tag)}" aria-pressed="${activeMemberTag === tag}">${esc(tag)}</button>`).join('')}`;
   }
   function memberCard(member) {
     const tags = tagsForMember(member);
-    return `<article class="member" data-member-card data-tags="${esc(tags.join('|'))}" data-search="${esc([member.online,member.real,member.title,...member.roles,...member.projects].join(' '))}">${avatar(member.online,'',member.avatarImage)}<div><h3>${esc(member.online)}</h3><p class="role">${esc(member.title)}</p><p><strong>Real name:</strong> ${esc(member.real)}</p><p><strong>Roles:</strong> ${member.roles.map(esc).join(', ')}</p><div class="member-tags" aria-label="Member roles and projects">${tags.map(tag => `<span class="tag member-tag${DATA.games.some(game => game.name === tag) ? ' member-tag-project' : ''}">${esc(tag)}</span>`).join('')}</div>${member.id ? `<a class="member-profile-link" href="account.html?user=${encodeURIComponent(member.id)}">View profile <span aria-hidden="true">↗</span></a>` : ''}</div></article>`;
+    return `<article class="member" data-member-card data-tags="${esc(tags.join('|'))}" data-search="${esc([member.online,member.real,...member.roles,...member.projects].join(' '))}">${avatar(member.online,'',member.avatarImage)}<div><h3>${esc(member.online)}</h3><p><strong>Real name:</strong> ${esc(member.real)}</p><div class="member-tags" aria-label="Member roles and projects">${tags.map(tag => `<span class="tag member-tag${DATA.games.some(game => game.name === tag) ? ' member-tag-project' : ''}">${esc(tag)}</span>`).join('')}</div>${member.id ? `<a class="member-profile-link" href="account.html?user=${encodeURIComponent(member.id)}">View profile <span aria-hidden="true">↗</span></a>` : ''}</div></article>`;
   }
   let activeMemberTag = 'All';
   function updateMemberResults() {
@@ -91,7 +102,7 @@
     try {
       const result = await api('/api/team');
       DATA.members = result.members || [];
-      if (page === 'list' && container) { container.innerHTML = DATA.members.map(memberCard).join(''); updateMemberResults(); }
+      if (page === 'list' && container) { container.innerHTML = DATA.members.map(memberCard).join(''); renderMemberFilters(); updateMemberResults(); }
       if (page === 'account' && currentUser && editingProfile) showAccount();
     } catch (_) {
       if (page === 'list' && container) { container.innerHTML = ''; setMessage('#member-load-message','Team profiles could not be loaded. Please refresh the page.'); }
@@ -113,6 +124,12 @@
     const button = $('#profile-button');
     const popover = $('#profile-popover');
     if (!currentUser) {
+      if (isGuest) {
+        button.innerHTML = avatar('Visitor','guest-avatar');
+        button.setAttribute('aria-label','Open Visitor profile preview');
+        popover.innerHTML = `<div class="profile-pop-hero guest-pop-hero"><div class="profile-pop-banner guest-pop-banner"><span>VISITOR</span></div><div class="profile-pop-head">${avatar('Visitor','guest-avatar')}<div class="profile-pop-identity"><strong>Visitor</strong><span class="profile-pop-bio">Browsing Solaris as a guest</span><span class="profile-role-chip">Visitor</span></div></div></div><a class="btn btn-primary profile-view" href="account.html?guest=1">View guest profile</a>`;
+        return;
+      }
       button.innerHTML = avatar('Guest');
       button.setAttribute('aria-label', 'Open account sign-in preview');
       popover.innerHTML = `<div class="profile-pop-head">${avatar('Guest')}<div><strong>Welcome to Solaris</strong><span>Sign in or create a profile</span></div></div>
@@ -157,13 +174,13 @@
       return `<div class="wrap"><div class="page-head"><h1>List</h1><p>Meet the active members of Solaris Studio.</p></div>
         <section class="member-directory" aria-label="Search and filter members"><label class="member-search-wrap"><span class="visually-hidden">Search by member, role, or project</span><span class="member-search-icon" aria-hidden="true">⌕</span><input id="member-search" type="search" data-member-search placeholder="Search members, roles, or games…" autocomplete="off"></label>
         <div class="member-filter-bar" role="group" aria-label="Filter members by role or project"><button class="member-filter-chip" type="button" data-member-filter="All" aria-pressed="true">All</button>${memberFilterOptions.map(tag => `<button class="member-filter-chip" type="button" data-member-filter="${esc(tag)}" aria-pressed="false">${esc(tag)}</button>`).join('')}</div></section>
-        <div class="members" id="member-results"></div><p class="empty member-empty" id="member-no-results">Team profiles will appear here when members create accounts and the Owner connects them to the studio list.</p><p class="form-message" id="member-load-message" role="status"></p><div class="page-end"></div></div>`;
+        <div class="members" id="member-results"></div><p class="empty member-empty" id="member-no-results">Studio team profiles appear here when the Owner assigns Assistant, AI Assistant, or Developer roles.</p><p class="form-message" id="member-load-message" role="status"></p><div class="page-end"></div></div>`;
     },
     games() { return `<div class="wrap"><div class="page-head"><h1>Games</h1><p>Solaris Studio is new, with one game in development and one planned for the future.</p></div><div class="grid">${DATA.games.map(projectCard).join('')}</div><div class="page-end"></div></div>`; },
     updates() { return `<div class="wrap"><div class="page-head"><h1>Updates</h1><p>News and development updates from Solaris Studio.</p></div><article class="update-card"><span class="section-eyebrow">DEVELOPMENT NOTE</span><h2>Gamma Frost production is slow</h2><p>Gamma Frost production is moving slowly because I’m currently the only person working on it. That means I can’t build every part of the game at once, so development will take time.</p><p>When Gamma Frost reaches early access, it will not yet be an MMORPG. The game will begin in a more limited form, and its larger online world will take longer to build. Thank you for your patience while I keep working on it.</p></article><div class="page-end"></div></div>`; },
     arts() { return `<div class="wrap"><div class="page-head"><h1>Arts</h1><p>Artwork and visuals from Solaris Studio projects.</p></div><div class="artwork-grid">${DATA.arts.map(artworkCard).join('')}</div><div class="page-end"></div></div>`; },
     groups() { return `<div class="wrap"><div class="page-head"><h1>Groups</h1><p>Join the Solaris Studio community and find our official group links here.</p></div><section class="group-intro"><span class="section-eyebrow">ABOUT OUR COMMUNITY</span><h2>Small team, big dreams.</h2><p>Solaris Studio is an early-stage game development community with two active developers. We make games to bring the things we dream of creating to life.</p></section><section class="account-panel groups-panel"><h2>Solaris communities</h2><a class="group-link" href="https://discord.gg/Wg6Y9Yc4JA" target="_blank" rel="noopener noreferrer"><span class="group-link-icon" aria-hidden="true">◉</span><span><strong>Solaris Studio Discord</strong><small>Join the community</small></span><span class="group-link-arrow" aria-hidden="true">↗</span></a></section><div class="page-end"></div></div>`; },
-    download() { return `<div class="wrap"><div class="page-head"><h1>Download</h1><p>Extras and add-ons for Solaris Studio games.</p></div><section class="download-intro"><span class="section-eyebrow">PLUGINS · MODS · EXTRAS</span><h2>Make each game your own</h2><p>This page is a home for extras created for Solaris Studio games: character skins, add-ons, mods, plugins, modding apps, and other useful tools. These creations can give players new ways to personalize a game, try new ideas, and build on the experience. Game builds themselves will be shared on their own project detail pages; this page is for the tools and community-made additions around them.</p><p>There are no downloads available yet. As our games and their tools grow, we’ll add each extra here with details about its game, version, and use. We welcome creativity while asking everyone to use modifications thoughtfully: local servers on your own computer are supported, and public-server use is welcome when the modification is appropriate and safe.</p><h3>Why we support game modification tools</h3><ul class="download-reasons"><li><strong>Personalize your characters.</strong> Use skins and visual add-ons to make a character feel like your own.</li><li><strong>Explore more ways to play.</strong> Mods, plugins, and add-ons can introduce new ideas, features, and experiences to Solaris games.</li><li><strong>Celebrate creativity and hard work.</strong> Modding apps give players a way to experiment, make things, and share the care they put into their creations.</li></ul></section><div class="download-categories"><section class="download-category"><h2>Plugins &amp; tools</h2><p>No plugins or tools are available yet.</p></section><section class="download-category"><h2>Mods &amp; add-ons</h2><p>No mods or add-ons are available yet.</p></section></div><div class="project-download-links"><h2>Game pages</h2>${DATA.games.map(game => `<a class="text-link" href="project.html?id=${encodeURIComponent(game.id)}">${esc(game.name)} project details <span aria-hidden="true">↗</span></a>`).join('')}</div><div class="page-end"></div></div>`; },
+    download() { const downloadAccess = currentUser ? '<p class="download-access-note">Downloads will be available to signed-in members when the first extras are ready.</p>' : '<div class="download-guest-gate"><p>Guests can browse this page, but downloads require a Solaris account. No downloads are available yet.</p><a class="btn btn-ghost btn-sm" href="account.html?mode=login">Log in to access downloads</a></div>'; return `<div class="wrap"><div class="page-head"><h1>Download</h1><p>Extras and add-ons for Solaris Studio games.</p></div><section class="download-intro"><span class="section-eyebrow">PLUGINS · MODS · EXTRAS</span><h2>Make each game your own</h2><p>This page is a home for extras created for Solaris Studio games: character skins, add-ons, mods, plugins, modding apps, and other useful tools. These creations can give players new ways to personalize a game, try new ideas, and build on the experience. Game builds themselves will be shared on their own project detail pages; this page is for the tools and community-made additions around them.</p><p>There are no downloads available yet. As our games and their tools grow, we’ll add each extra here with details about its game, version, and use. We welcome creativity while asking everyone to use modifications thoughtfully: local servers on your own computer are supported, and public-server use is welcome when the modification is appropriate and safe.</p><h3>Why we support game modification tools</h3><ul class="download-reasons"><li><strong>Personalize your characters.</strong> Use skins and visual add-ons to make a character feel like your own.</li><li><strong>Explore more ways to play.</strong> Mods, plugins, and add-ons can introduce new ideas, features, and experiences to Solaris games.</li><li><strong>Celebrate creativity and hard work.</strong> Modding apps give players a way to experiment, make things, and share the care they put into their creations.</li></ul>${downloadAccess}</section><div class="download-categories"><section class="download-category"><h2>Plugins &amp; tools</h2><p>No plugins or tools are available yet.</p></section><section class="download-category"><h2>Mods &amp; add-ons</h2><p>No mods or add-ons are available yet.</p></section></div><div class="project-download-links"><h2>Game pages</h2>${DATA.games.map(game => `<a class="text-link" href="project.html?id=${encodeURIComponent(game.id)}">${esc(game.name)} project details <span aria-hidden="true">↗</span></a>`).join('')}</div><div class="page-end"></div></div>`; },
     shop() {
       const inventory = currentUser?.tickets || { namecard: 0, who: 0 };
       const ticketCard = (kind, title, summary, count) => `<article class="shop-ticket-card"><span class="shop-ticket-mark" aria-hidden="true">${kind === 'namecard' ? '✦' : '？'}</span><div class="shop-ticket-copy"><span class="section-eyebrow">PROFILE TICKET</span><h2>${title}</h2><p>${summary}</p><span class="shop-ticket-count">${currentUser ? `In your inventory: <strong>${count}</strong>` : 'Sign in to view your inventory.'}</span></div>${currentUser ? `<button class="btn btn-primary" type="button" data-shop-ticket="${kind}">Get for free</button>` : '<a class="btn btn-primary" href="account.html?mode=signup">Sign up or log in</a>'}</article>`;
@@ -179,7 +196,8 @@
       const worldIntro = game.worldIntro ? `<section class="project-copy project-story"><h2>Short introduction</h2>${paragraphs(game.worldIntro)}</section>` : '';
       const playerIntro = game.playerIntro ? `<section class="project-copy project-story"><h2>Your story begins</h2>${paragraphs(game.playerIntro)}</section>` : '';
       const releasePlan = game.releasePlan ? `<section class="project-copy project-release"><h2>Early access plans</h2><p>${esc(game.releasePlan)}</p></section>` : '';
-      return `<div class="project-page"><div class="project-banner project-banner-${esc(game.cover)}" role="img" aria-label="${esc(game.name)} project banner">${gameBannerImage(game)}<div class="project-banner-mark">${esc(game.name)}</div></div><div class="wrap project-layout"><main class="project-detail-main"><a class="project-back" href="games.html">← All projects</a><div class="project-heading">${projectIcon(game)}<div><div class="project-status-row">${badge(game.status)}${game.version ? `<span class="project-version">${esc(game.version)}</span>` : ''}</div><h1>${esc(game.name)}</h1><p class="project-subtitle">${esc(game.subtitle)} · ${esc(game.genre)}</p></div></div><section class="project-copy"><h2>About this project</h2><p>${esc(game.details)}</p><p>${esc(game.blurb)}</p></section>${worldIntro}${playerIntro}${releasePlan}<section class="project-copy project-extra"><h2>Downloads</h2><p>${game.status === 'In Development' ? 'There are no public game builds yet. Check back as development continues.' : 'This project is planned for the future and has no downloads yet.'}</p><a class="text-link" href="download.html">Browse plugins, mods, and extras <span aria-hidden="true">↗</span></a></section>${artworkSection}</main><aside class="project-switcher" aria-label="Solaris projects"><label class="project-search-wrap"><span class="project-search-icon" aria-hidden="true">⌕</span><span class="visually-hidden">Search other games</span><input type="search" data-project-search placeholder="Search other games…" autocomplete="off"></label><section class="project-selected-section"><span class="section-eyebrow">Selected Game</span>${currentProject}</section><div class="project-switch-divider"><span>Explore other games</span></div><div class="project-switch-list">${otherProjects}</div><p class="project-no-results" data-project-empty hidden>No other games match that search.</p></aside></div></div>`;
+      const downloadMessage = !currentUser ? 'Game downloads require a signed-in Solaris account. No public build is available yet.' : game.status === 'In Development' ? 'There are no public game builds yet. Check back as development continues.' : 'This project is planned for the future and has no downloads yet.';
+      return `<div class="project-page"><div class="project-banner project-banner-${esc(game.cover)}" role="img" aria-label="${esc(game.name)} project banner">${gameBannerImage(game)}<div class="project-banner-mark">${esc(game.name)}</div></div><div class="wrap project-layout"><main class="project-detail-main"><a class="project-back" href="games.html">← All projects</a><div class="project-heading">${projectIcon(game)}<div><div class="project-status-row">${badge(game.status)}${game.version ? `<span class="project-version">${esc(game.version)}</span>` : ''}</div><h1>${esc(game.name)}</h1><p class="project-subtitle">${esc(game.subtitle)} · ${esc(game.genre)}</p></div></div><section class="project-copy"><h2>About this project</h2><p>${esc(game.details)}</p><p>${esc(game.blurb)}</p></section>${worldIntro}${playerIntro}${releasePlan}<section class="project-copy project-extra"><h2>Downloads</h2><p>${esc(downloadMessage)}</p><a class="text-link" href="download.html">Browse plugins, mods, and extras <span aria-hidden="true">↗</span></a></section>${artworkSection}</main><aside class="project-switcher" aria-label="Solaris projects"><label class="project-search-wrap"><span class="project-search-icon" aria-hidden="true">⌕</span><span class="visually-hidden">Search other games</span><input type="search" data-project-search placeholder="Search other games…" autocomplete="off"></label><section class="project-selected-section"><span class="section-eyebrow">Selected Game</span>${currentProject}</section><div class="project-switch-divider"><span>Explore other games</span></div><div class="project-switch-list">${otherProjects}</div><p class="project-no-results" data-project-empty hidden>No other games match that search.</p></aside></div></div>`;
     },
     artwork() {
       const artwork = artById(new URLSearchParams(location.search).get('id')) || DATA.arts[0];
@@ -253,18 +271,37 @@
     return rows.map(item => `<div class="social-editor-row"><label>Account name<input name="social-label" maxlength="30" placeholder="Instagram, Discord, website…" value="${esc(item.label || '')}"></label><label>Profile link<input name="social-url" type="url" maxlength="240" placeholder="https://…" value="${esc(item.url || '')}"></label><button class="icon-btn social-remove" type="button" data-remove-social aria-label="Remove social account">Remove</button></div>`).join('');
   }
   function ownerTeamManager() {
-    return `<section class="account-panel account-panel-wide owner-team-manager"><div class="panel-heading"><div><h2>Team account connections</h2><p>Connect member accounts to the Solaris List page.</p></div></div><p class="form-message" id="team-admin-message" role="status"></p><div class="team-admin-list" id="team-admin-list"><p class="empty-inline">Loading member accounts…</p></div></section>`;
+    return `<section class="account-panel account-panel-wide owner-team-manager"><div class="panel-heading"><div><h2>Assign account roles</h2><p>Choose each registered account’s primary role and add comma-separated role tags. Visitor is reserved for guests.</p></div></div><p class="form-message" id="team-admin-message" role="status"></p><div class="team-admin-list" id="team-admin-list"><p class="empty-inline">Loading accounts…</p></div></section>`;
   }
   async function loadOwnerAccounts() {
     const list = $('#team-admin-list');
     if (!list) return;
     try {
       const result = await api('/api/admin/accounts');
-      list.innerHTML = result.accounts.length ? result.accounts.map(account => `<label class="team-admin-row"><span><strong>${esc(account.username)}</strong><small>${account.accountRole === 'owner' ? 'Solaris Owner account' : 'Member account'}</small></span><select data-team-assignment data-account-id="${esc(account.id)}" aria-label="Team position for ${esc(account.username)}"><option value=""${!account.teamKey ? ' selected' : ''}>Not on the List</option><option value="owner"${account.teamKey === 'owner' ? ' selected' : ''} disabled>Owner</option><option value="assistant"${account.teamKey === 'assistant' ? ' selected' : ''}>Assistant</option></select></label>`).join('') : '<p class="empty-inline">No accounts have signed up yet.</p>';
+      list.innerHTML = result.accounts.length ? result.accounts.map(account => {
+        if (account.accountRole === 'owner') return `<div class="team-admin-row team-admin-owner-row"><span><strong>${esc(account.username)}</strong><small>Owner permission</small></span><strong class="profile-role-chip">Owner</strong></div>`;
+        const roleOptions = Object.entries(PRIMARY_ROLE_LABELS).map(([value,label]) => `<option value="${value}"${account.primaryRole === value ? ' selected' : ''}${value === 'visitor' ? ' disabled' : ''}>${esc(label)}${value === 'visitor' ? ' · guest only' : ''}</option>`).join('');
+        return `<div class="team-admin-row team-role-row" data-role-row data-account-id="${esc(account.id)}"><span class="team-admin-identity"><strong>${esc(account.username)}</strong><small>Registered account</small></span><label>Primary role<select data-primary-role aria-label="Primary role for ${esc(account.username)}">${roleOptions}</select></label><label>Secondary role tags<input data-secondary-roles maxlength="640" value="${esc((account.secondaryRoles || []).join(', '))}" placeholder="Scripter, Modeler, Tester…"></label><button class="btn btn-ghost btn-sm" type="button" data-save-account-roles>Save roles</button></div>`;
+      }).join('') : '<p class="empty-inline">No accounts have signed up yet.</p>';
     } catch (error) {
       setMessage('#team-admin-message',error.message);
       list.innerHTML = '';
     }
+  }
+  async function saveAccountRoles(button) {
+    const row = button.closest('[data-role-row]');
+    if (!row) return;
+    button.disabled = true;
+    try {
+      await api('/api/admin/account-roles','PUT',{
+        accountId:row.dataset.accountId,
+        primaryRole:$('[data-primary-role]',row).value,
+        secondaryRoles:$('[data-secondary-roles]',row).value
+      });
+      setMessage('#team-admin-message','Account roles saved.',false);
+      await Promise.all([loadOwnerAccounts(),loadTeamMembers()]);
+    } catch (error) { setMessage('#team-admin-message',error.message); }
+    finally { button.disabled = false; }
   }
   function dangerZone() {
     return `<section class="account-panel account-panel-wide danger-zone"><span class="danger-eyebrow">ACCOUNT MANAGEMENT</span><h2>Danger zone</h2><p>Pause your account for 30 days, or permanently delete it and its Solaris pause backups.</p><div class="danger-actions"><button class="danger-button danger-button-pause" type="button" data-account-action="pause"><strong>Pause account</strong><span>Hide your profile and block logins for 30 days.</span></button><button class="danger-button danger-button-delete" type="button" data-account-action="delete"><strong>Delete account</strong><span>Permanently remove your account and its Solaris backups.</span></button></div><p class="danger-retention-note">Deletion clears account data and pause backups held by Solaris. Git history and backups retained separately by the hosting or database provider follow their own retention policies.</p><div class="account-danger-footer"><button class="btn btn-ghost btn-sm" data-logout>Log out</button></div></section>`;
@@ -276,10 +313,12 @@
     const favorites = favoritesFor(user);
     const favoriteCards = [['game',favorites.game],['developer',favorites.developer],['artwork',favorites.artwork]].map(([type,item]) => favoriteCard(type,item)).filter(Boolean);
     const installed = user.installedGames?.length ? user.installedGames.map(game => `<span class="tag">${esc(game)}</span>`).join('') : '<p class="empty-inline">No installed games added yet.</p>';
-    const roleLabel = user.accountRole === 'owner' ? 'Solaris Owner' : user.teamKey === 'assistant' ? 'The Assistant' : 'Solaris Member';
+    const roleLabel = user.accountRole === 'owner' ? 'Solaris Owner' : (PRIMARY_ROLE_LABELS[user.primaryRole] || 'Member');
     const profileOptions = isOwn ? `<div class="profile-options-wrap"><button class="profile-options-button" type="button" data-profile-options aria-label="Profile options" aria-expanded="false" aria-controls="profile-options">⋮</button><div class="profile-options-menu" id="profile-options" hidden><button type="button" data-edit-account>Edit Profile</button></div></div>` : '';
     const admin = isOwn && user.accountRole === 'owner' ? ownerTeamManager() : '';
-    const ownerClaim = isOwn && user.canClaimOwner ? `<section class="account-panel account-panel-wide owner-claim-panel"><span class="section-eyebrow">STUDIO SETUP</span><h2>Claim the Solaris Owner role</h2><p>Your signed-in username is reserved for the Owner account. Enter the one-time setup code configured on the Solaris server to connect it to the List and manage team accounts.</p><form id="owner-claim-form"><label>Owner setup code<input name="ownerSetupCode" type="password" maxlength="200" autocomplete="off" required></label><p class="form-message" id="owner-claim-message" role="status"></p><button class="btn btn-primary" type="submit">Claim Owner role</button></form></section>` : '';
+    const roleKey = user.primaryRole;
+    const profileRoles = ['assistant','ai-assistant','developer'].includes(roleKey) ? `<section class="account-panel account-panel-wide profile-roles-panel"><h2>Roles</h2><div class="member-tags"><span class="tag member-tag">${esc(PRIMARY_ROLE_LABELS[roleKey])}</span>${(user.secondaryRoles || []).map(tag => `<span class="tag member-tag">${esc(tag)}</span>`).join('')}</div><p>${esc(PRIMARY_ROLE_EXPLANATIONS[roleKey])}</p></section>` : '';
+    const ownerClaim = isOwn && user.canClaimOwner ? `<section class="account-panel account-panel-wide owner-claim-panel"><span class="section-eyebrow">STUDIO SETUP</span><h2>Claim the Solaris Owner role</h2><p>Your signed-in username is reserved for the Owner account. Enter the one-time setup code configured on the Solaris server to manage registered account roles.</p><form id="owner-claim-form"><label>Owner setup code<input name="ownerSetupCode" type="password" maxlength="200" autocomplete="off" required></label><p class="form-message" id="owner-claim-message" role="status"></p><button class="btn btn-primary" type="submit">Claim Owner role</button></form></section>` : '';
     return `<div class="wrap account-wrap">
       <section class="account-hero"><div class="account-banner ${bannerRatioClass(user.bannerRatio)}">${bannerImage(user.bannerImage)}</div>
         ${profileOptions}<div class="account-hero-row">${avatar(user.username,'avatar-large',user.avatarImage)}${noteControl(user.notes,'note-control-full')}<div class="account-hero-name"><h2>${esc(user.username)}</h2><p>${user.realName ? esc(user.realName) : 'Real name not shared'}${user.pronouns ? ` <span class="account-pronouns">· ${esc(user.pronouns)}</span>` : ''}</p><span class="profile-role-chip">${esc(roleLabel)}</span></div></div></section>
@@ -289,7 +328,7 @@
         <section class="account-panel"><h2>Likes</h2><p>${esc(user.likes || 'No likes added yet.')}</p></section>
         <section class="account-panel"><h2>Dislikes</h2><p>${esc(user.dislikes || 'No dislikes added yet.')}</p></section>
         <section class="account-panel account-panel-wide"><h2>Favorites</h2>${favoriteCards.length ? `<div class="favorite-grid">${favoriteCards.join('')}</div>` : '<p class="empty-inline">No favorites added yet. Edit your profile to choose favorites.</p>'}</section>
-        <section class="account-panel account-panel-wide"><h2>Installed games</h2><div class="tag-list">${installed}</div></section>${admin}${ownerClaim}
+        <section class="account-panel account-panel-wide"><h2>Installed games</h2><div class="tag-list">${installed}</div></section>${profileRoles}${admin}${ownerClaim}
       </div>${isOwn ? `<p class="account-footnote">Your profile is saved by the Solaris server. Real name and profile details are optional.</p>${dangerZone()}${dangerDialog()}` : ''}</div>`;
   }
   function profileEditor(user) {
@@ -324,6 +363,7 @@
       <form id="signup-form" class="form auth-form"${signupSelected ? '' : ' hidden'}><h2>Create your account</h2><label>Username<input name="username" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_.-]+( [A-Za-z0-9_.-]+)*" autocomplete="username" placeholder="3–24 characters; spaces allowed"></label>
       <label>Password<input name="password" type="password" required minlength="10" maxlength="200" autocomplete="new-password" placeholder="At least 10 characters"></label><label>Confirm password<input name="confirmPassword" type="password" required minlength="10" maxlength="200" autocomplete="new-password"></label><details class="owner-setup"><summary>Studio owner setup</summary><label>Owner setup code<input name="ownerSetupCode" type="password" maxlength="200" autocomplete="off"></label><small>Only the reserved studio owner should use this server setup code.</small></details><button class="btn btn-primary" type="submit">Create account</button></form>
       <form id="login-form" class="form auth-form"${!signupSelected ? '' : ' hidden'}><h2>Welcome back</h2><label>Username<input name="username" required maxlength="24" autocomplete="username"></label><label>Password<input name="password" type="password" required maxlength="200" autocomplete="current-password"></label><button class="btn btn-primary" type="submit">Log in</button></form>
+      ${signupSelected ? '<button class="btn btn-ghost guest-entry" type="button" data-view-guest>View site as guest</button>' : ''}
       <p class="auth-note">Email is not required. Use a unique password and keep it somewhere safe; password recovery is unavailable until the studio has an email service.</p></section></div>`;
   }
   function showAccount() {
@@ -336,7 +376,8 @@
     }
     if (!currentUser) {
       const mode = params.get('mode') || 'signup';
-      app.innerHTML = authView(mode === 'login' ? 'login' : 'signup');
+      if (isGuest && !params.has('mode')) app.innerHTML = guestDashboard();
+      else app.innerHTML = authView(mode === 'login' ? 'login' : 'signup');
     } else {
       app.innerHTML = editingProfile ? profileEditor(currentUser) : profileDashboard(currentUser,true);
       if (!editingProfile && currentUser.accountRole === 'owner') loadOwnerAccounts();
@@ -355,6 +396,13 @@
     $('#login-form').hidden = signup;
     $$('[data-auth-mode]').forEach(button => button.setAttribute('aria-selected',String(button.dataset.authMode === mode)));
     setMessage('#auth-message','',false);
+  }
+  function guestDashboard() {
+    return `<div class="wrap account-wrap guest-account-wrap"><section class="account-hero guest-account-hero"><div class="account-banner banner-ratio-21-9 guest-account-banner"><span>VISITOR</span></div><div class="account-hero-row">${avatar('Visitor','avatar-large guest-avatar')}<div class="account-hero-name"><h2>Visitor</h2><span class="profile-role-chip">Visitor</span></div></div></section><section class="account-panel guest-gate-card"><h2>Wish to Log In and access downloads?</h2><p>Click here to fully log in to access downloads and others.</p><div class="actions"><a class="btn btn-primary" href="account.html?mode=login">Log In</a><a class="btn btn-ghost" href="account.html?mode=signup">Create an account</a></div></section></div>`;
+  }
+  function leaveGuestMode() {
+    isGuest = false;
+    try { sessionStorage.removeItem('solaris-guest'); } catch (_) {}
   }
   function accountFromForm(form) {
     const get = name => $( `[name="${name}"]`, form)?.value?.trim() || '';
@@ -492,7 +540,7 @@
     discardCrop();
   }
   async function logout() {
-    try { await api('/api/logout','POST',{}); currentUser = null; editingProfile = false; closeProfile(); profilePreview(); if (page === 'account') showAccount(); toast('You are logged out.'); }
+    try { await api('/api/logout','POST',{}); currentUser = null; leaveGuestMode(); editingProfile = false; closeProfile(); profilePreview(); if (page === 'account') showAccount(); toast('You are logged out.'); }
     catch (error) { toast(error.message); }
   }
   function projectDialog(id) {
@@ -508,13 +556,14 @@
   loadTeamMembers();
   api('/api/me').then(result => {
     currentUser = result.user;
+    if (currentUser) leaveGuestMode();
     profilePreview();
     if (page === 'account') showAccount();
-    if (page === 'shop') renderPage();
+    if (['shop','download','project'].includes(page)) renderPage();
   }).catch(error => {
     currentUser = null;
     profilePreview();
-    if (page === 'account') app.innerHTML = authView('signup','Could not reach the account server. Start the site with node server.js and reload.');
+    if (page === 'account') app.innerHTML = isGuest && !new URLSearchParams(location.search).has('mode') ? guestDashboard() : authView('signup','Could not reach the account server. Start the site with node server.js and reload.');
   });
 
   document.addEventListener('click', event => {
@@ -525,6 +574,8 @@
     const gameButton = event.target.closest('[data-game]');
     const authMode = event.target.closest('[data-auth-mode]');
     const shopTicket = event.target.closest('[data-shop-ticket]');
+    const guestEntry = event.target.closest('[data-view-guest]');
+    const saveRoles = event.target.closest('[data-save-account-roles]');
     const addSocial = event.target.closest('[data-add-social]');
     const removeSocial = event.target.closest('[data-remove-social]');
     const profileOptions = event.target.closest('[data-profile-options]');
@@ -590,6 +641,13 @@
     if (cropRatio && cropSession?.kind === 'banner') { cropSession.ratio = cropRatio.dataset.cropRatio; cropSession.offsetX = 0; cropSession.offsetY = 0; paintCrop(); return; }
     if (cropRotate && cropSession) { cropSession.rotation = (cropSession.rotation + Number(cropRotate.dataset.cropRotate) + 360) % 360; if (cropSession.rotation > 180) cropSession.rotation -= 360; paintCrop(); return; }
     if (shopTicket) { getShopTicket(shopTicket); return; }
+    if (guestEntry) {
+      isGuest = true;
+      try { sessionStorage.setItem('solaris-guest','1'); } catch (_) {}
+      location.href = 'index.html?guest=1';
+      return;
+    }
+    if (saveRoles) { saveAccountRoles(saveRoles); return; }
     if (event.target.closest('[data-logout]')) { logout(); return; }
     if (closeButton) { $('#dlg').close(); return; }
     if (gameButton) { projectDialog(gameButton.dataset.game); return; }
@@ -613,13 +671,13 @@
       const submit = $('button[type="submit"]',form); submit.disabled = true;
       try {
         const result = await api('/api/signup','POST',{username:data.get('username'),ownerSetupCode:data.get('ownerSetupCode'),password,profile:{}});
-        currentUser = result.user; editingProfile = false; profilePreview(); showAccount(); toast(result.message);
+        currentUser = result.user; leaveGuestMode(); editingProfile = false; profilePreview(); showAccount(); toast(result.message);
       } catch (error) { setMessage('#auth-message',error.message); }
       finally { submit.disabled = false; }
     } else if (event.target.id === 'login-form') {
       event.preventDefault();
       const form = event.target, data = new FormData(form), submit = $('button[type="submit"]',form); submit.disabled = true;
-      try { const result = await api('/api/login','POST',{username:data.get('username'),password:data.get('password')}); currentUser = result.user; profilePreview(); showAccount(); toast(`Welcome back, ${currentUser.username}.`); }
+      try { const result = await api('/api/login','POST',{username:data.get('username'),password:data.get('password')}); currentUser = result.user; leaveGuestMode(); profilePreview(); showAccount(); toast(`Welcome back, ${currentUser.username}.`); }
       catch (error) { setMessage('#auth-message',error.message); }
       finally { submit.disabled = false; }
     } else if (event.target.id === 'profile-form') {
@@ -653,17 +711,6 @@
       catch (error) { setMessage('#owner-claim-message',error.message); }
       finally { submit.disabled = false; }
     }
-  });
-  document.addEventListener('change', async event => {
-    const assignment = event.target.closest('[data-team-assignment]');
-    if (!assignment) return;
-    assignment.disabled = true;
-    try {
-      await api('/api/admin/team-member','PUT',{accountId:assignment.dataset.accountId,teamKey:assignment.value});
-      setMessage('#team-admin-message','Team connection saved.',false);
-      await Promise.all([loadOwnerAccounts(),loadTeamMembers()]);
-    } catch (error) { setMessage('#team-admin-message',error.message); await loadOwnerAccounts(); }
-    finally { assignment.disabled = false; }
   });
   document.addEventListener('change', async event => {
     const input = event.target.closest('[data-image-input]');

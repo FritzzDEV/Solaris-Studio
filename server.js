@@ -18,10 +18,13 @@ const USERNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_BODY = 3 * 1024 * 1024;
 const STATIC_FILES = new Set(['index.html', 'list.html', 'games.html', 'project.html', 'artwork.html', 'updates.html', 'account.html', 'arts.html', 'groups.html', 'download.html', 'shop.html', 'assets/hollow-shift-icon.webp', 'assets/gamma-frost-banner.webp', 'assets/golden-spiral-sun-icon.png', 'styles.css', 'app.js']);
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.webp': 'image/webp', '.png': 'image/png' };
-const TEAM_SLOTS = {
-  owner: { title: 'The Owner', roles: ['Coder', 'Mesh modeler', 'Tester', 'Updater', 'Announcer', 'The Owner'], projects: ['Gamma Frost', 'OmiWo: Collide'] },
-  assistant: { title: 'The Assistant', roles: ['Coder', 'Tester', 'Announcer', 'Updater', 'The Assistant'], projects: ['Gamma Frost', 'OmiWo: Collide'] }
+const PRIMARY_ROLES = {
+  assistant: { label: 'Assistant', explanation: 'Supports studio coordination and helps keep Solaris projects moving.' },
+  'ai-assistant': { label: 'AI Assistant', explanation: 'An AI contributor that helps with Solaris Studio work under human direction.' },
+  developer: { label: 'Developer', explanation: 'Builds, tests, or maintains Solaris Studio projects.' },
+  member: { label: 'Member', explanation: 'A member of the Solaris Studio community.' }
 };
+const PROJECT_TAGS = ['Gamma Frost', 'OmiWo: Collide'];
 
 let accounts = [];
 let pausedAccounts = [];
@@ -94,8 +97,14 @@ function normalizeAccount(account) {
     const count = Math.min(99, Math.max(0, Math.floor(Number(account.tickets[kind]) || 0)));
     if (account.tickets[kind] !== count) { account.tickets[kind] = count; changed = true; }
   }
+  if (!Object.hasOwn(PRIMARY_ROLES, account.profile.primaryRole)) {
+    account.profile.primaryRole = account.profile.teamKey === 'assistant' ? 'assistant' : 'member';
+    changed = true;
+  }
+  if (Object.hasOwn(account.profile, 'teamKey')) { delete account.profile.teamKey; changed = true; }
+  const secondaryRoles = cleanSecondaryRoles(account.profile.secondaryRoles);
+  if (JSON.stringify(secondaryRoles) !== JSON.stringify(account.profile.secondaryRoles || [])) { account.profile.secondaryRoles = secondaryRoles; changed = true; }
   if (!Number(account.profile.usernameLastChangedAt)) { account.profile.usernameLastChangedAt = Date.now(); changed = true; }
-  if (!['owner', 'assistant'].includes(account.profile.teamKey) && account.profile.teamKey != null) { account.profile.teamKey = null; changed = true; }
   return changed;
 }
 function validUsername(value) {
@@ -139,6 +148,17 @@ function allowAttempt(req) {
 function text(value, max = 500) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
+function cleanSecondaryRoles(value) {
+  const source = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
+  const seen = new Set();
+  return source.map(item => text(item, 32).replace(/\s+/g, ' ')).filter(item => {
+    if (!item || !/[A-Za-z0-9]/.test(item) || !/^[A-Za-z0-9][A-Za-z0-9 .+\/#&'-]*$/.test(item)) return false;
+    const key = item.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 20);
+}
 function imageData(value) {
   if (value == null || value === '') return '';
   if (typeof value !== 'string' || value.length > 950_000 || !/^data:image\/(?:webp|jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)) {
@@ -172,7 +192,8 @@ function cleanProfile(input, existing = {}) {
   return {
     username: text(input.username, 24) || existing.username || '',
     usernameLastChangedAt: Number(existing.usernameLastChangedAt) || Date.now(),
-    teamKey: existing.teamKey || null,
+    primaryRole: existing.primaryRole || 'member',
+    secondaryRoles: cleanSecondaryRoles(existing.secondaryRoles),
     avatarImage: imageData(input.avatarImage),
     bannerImage: imageData(input.bannerImage),
     bannerRatio: input.bannerRatio === '16:9' ? '16:9' : '21:9',
@@ -229,17 +250,38 @@ async function handleApi(req, res, pathname) {
     return account ? send(res, 200, { user: publicProfile(account) }) : send(res, 404, { error: 'This profile could not be found.' });
   }
   if (req.method === 'GET' && pathname === '/api/team') {
-    const team = accounts.filter(account => TEAM_SLOTS[account.profile.teamKey]).map(account => {
-      const slot = TEAM_SLOTS[account.profile.teamKey];
-      return { id: account.id, online: account.profile.username, real: account.profile.realName || 'Not shared', avatarImage: account.profile.avatarImage, title: slot.title, roles: slot.roles, projects: slot.projects };
+    const team = accounts.filter(account => account.role === 'owner' || ['assistant', 'ai-assistant', 'developer'].includes(account.profile.primaryRole)).map(account => {
+      const primaryRole = account.role === 'owner' ? 'Owner' : PRIMARY_ROLES[account.profile.primaryRole]?.label || 'Member';
+      return { id: account.id, online: account.profile.username, real: account.profile.realName || 'Not shared', avatarImage: account.profile.avatarImage, primaryRole, roles: [primaryRole, ...cleanSecondaryRoles(account.profile.secondaryRoles)], projects: PROJECT_TAGS };
     });
     return send(res, 200, { members: team });
   }
   if (req.method === 'GET' && pathname === '/api/admin/accounts') {
     const owner = await getAccount(req);
-    if (!owner || owner.role !== 'owner') return send(res, 403, { error: 'Only the Solaris Owner can manage team accounts.' });
-    const list = accounts.map(account => ({ id: account.id, username: account.profile.username, accountRole: account.role || 'member', teamKey: account.profile.teamKey || '' }));
+    if (!owner || owner.role !== 'owner') return send(res, 403, { error: 'Only the Solaris Owner can assign account roles.' });
+    const list = accounts.map(account => ({ id: account.id, username: account.profile.username, accountRole: account.role || 'member', primaryRole: account.role === 'owner' ? 'owner' : (account.profile.primaryRole || 'member'), secondaryRoles: cleanSecondaryRoles(account.profile.secondaryRoles) }));
     return send(res, 200, { accounts: list });
+  }
+  if (req.method === 'PUT' && pathname === '/api/admin/account-roles') {
+    const owner = await getAccount(req);
+    if (!owner || owner.role !== 'owner') return send(res, 403, { error: 'Only the Solaris Owner can assign account roles.' });
+    const input = await readBody(req);
+    const target = accounts.find(item => item.id === input.accountId);
+    if (!target) return send(res, 404, { error: 'That account could not be found.' });
+    if (target.role === 'owner') return send(res, 403, { error: 'The Owner access role cannot be changed here.' });
+    const primaryRole = text(input.primaryRole, 32);
+    if (!Object.hasOwn(PRIMARY_ROLES, primaryRole)) return send(res, 400, { error: 'Choose Assistant, AI Assistant, Developer, or Member. Visitor is reserved for guests.' });
+    const previousPrimaryRole = target.profile.primaryRole;
+    const previousSecondaryRoles = target.profile.secondaryRoles;
+    target.profile.primaryRole = primaryRole;
+    target.profile.secondaryRoles = cleanSecondaryRoles(input.secondaryRoles);
+    try { await saveAccounts(); }
+    catch (error) {
+      target.profile.primaryRole = previousPrimaryRole;
+      target.profile.secondaryRoles = previousSecondaryRoles;
+      throw error;
+    }
+    return send(res, 200, { account: { id: target.id, username: target.profile.username, primaryRole, secondaryRoles: target.profile.secondaryRoles } });
   }
   if (req.method === 'POST' && pathname === '/api/owner/claim') {
     if (!allowAttempt(req)) return send(res, 429, { error: 'Too many Owner setup attempts. Please try again later.' });
@@ -251,11 +293,9 @@ async function handleApi(req, res, pathname) {
     if (ownerExists || account.profile.username.toLowerCase() !== ownerUsername.toLowerCase()) return send(res, 403, { error: 'This account is not eligible to claim the Owner role.' });
     if (!process.env.SOLARIS_OWNER_SETUP_TOKEN || !secureEqual(input.ownerSetupCode, process.env.SOLARIS_OWNER_SETUP_TOKEN)) return send(res, 403, { error: 'The Owner setup code is not valid.' });
     const previousRole = account.role;
-    const previousTeamKey = account.profile.teamKey;
     account.role = 'owner';
-    account.profile.teamKey = 'owner';
     try { await saveAccounts(); }
-    catch (error) { account.role = previousRole; account.profile.teamKey = previousTeamKey; throw error; }
+    catch (error) { account.role = previousRole; throw error; }
     return send(res, 200, { user: { ...privateProfile(account), canClaimOwner: false } });
   }
   if (req.method === 'POST' && pathname === '/api/shop/purchase-ticket') {
@@ -294,7 +334,6 @@ async function handleApi(req, res, pathname) {
     const id = crypto.randomUUID();
     const account = { id, salt, passwordHash, role: claimOwner ? 'owner' : 'member', tickets: { namecard: 0, who: 0 },
       profile: cleanProfile({ ...input.profile, username }) };
-    if (claimOwner) account.profile.teamKey = 'owner';
     accounts.push(account);
     try { await saveAccounts(); }
     catch (error) { accounts = accounts.filter(item => item.id !== id); throw error; }
@@ -388,20 +427,6 @@ async function handleApi(req, res, pathname) {
       throw error;
     }
     return send(res, 200, { message: 'Your account and Solaris pause backups have been permanently deleted.' });
-  }
-  if (req.method === 'PUT' && pathname === '/api/admin/team-member') {
-    const owner = await getAccount(req);
-    if (!owner || owner.role !== 'owner') return send(res, 403, { error: 'Only the Solaris Owner can manage team accounts.' });
-    const input = await readBody(req);
-    const target = accounts.find(item => item.id === input.accountId);
-    const teamKey = input.teamKey === 'owner' || input.teamKey === 'assistant' ? input.teamKey : '';
-    if (!target) return send(res, 404, { error: 'That account could not be found.' });
-    if (target.role === 'owner' && teamKey !== 'owner') return send(res, 403, { error: 'The Owner account must keep the Owner team position.' });
-    if (teamKey === 'owner' && target.role !== 'owner') return send(res, 403, { error: 'Only the Owner account can hold the Owner team position.' });
-    if (teamKey && accounts.some(item => item.id !== target.id && item.profile.teamKey === teamKey)) return send(res, 409, { error: 'That team position is already connected to an account.' });
-    target.profile.teamKey = teamKey || null;
-    await saveAccounts();
-    return send(res, 200, { account: { id: target.id, username: target.profile.username, teamKey: target.profile.teamKey || '' } });
   }
   return send(res, 404, { error: 'Not found.' });
 }

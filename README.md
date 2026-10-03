@@ -29,9 +29,11 @@ To set up the Owner role, add these variables in the server’s hosting settings
 | `SOLARIS_OWNER_USERNAME` | Reserved Owner username. Defaults to `Fritzz Xenon`. |
 | `SOLARIS_OWNER_SETUP_TOKEN` | A long, private, one-time setup code. |
 
-If `Fritzz Xenon` already has an account, log into it after setting the variables and use **Claim the Solaris Owner role** on that account’s profile. If the account does not exist yet, sign up with the reserved username and setup code. The first eligible claim becomes Owner and is connected to the Owner slot. Remove `SOLARIS_OWNER_SETUP_TOKEN` after the role is claimed. The server prevents a second Owner claim, including while the first Owner account is paused.
+If `Fritzz Xenon` already has an account, log into it after setting the variables and use **Claim the Solaris Owner role** on that account’s profile. If the account does not exist yet, sign up with the reserved username and setup code. The first eligible claim becomes Owner. Remove `SOLARIS_OWNER_SETUP_TOKEN` after the role is claimed. The server prevents a second Owner claim, including while the first Owner account is paused.
 
-The Owner controls which accounts appear in the studio List. Have Cross Alpha sign up, then connect that account to the Assistant slot from the Owner’s profile. The connected member profiles then appear on the List page.
+The Owner assigns primary roles and secondary role tags from the profile’s **Assign account roles** panel. The assignable primary roles are **Assistant**, **AI Assistant**, **Developer**, and **Member**. The Owner permission is protected and separate from those choices. **Visitor** is reserved for guest browsing and cannot be assigned to a registered account. The List shows the Owner plus accounts assigned Assistant, AI Assistant, or Developer; Member accounts stay off the studio team directory. Secondary tags such as Scripter, Modeler, Tester, Updater, Announcer, Debugger, App tester, and Artist appear on the List as tags. Assistant, AI Assistant, and Developer profiles also show a short role explanation.
+
+Visitors can browse the site pages, but they cannot download games or extras or buy Shop tickets. Their top-right guest profile opens a simple prompt to log in or create an account. The home page is public whether or not a visitor has selected guest mode.
 
 Real name is optional. A warning appears before the first save because that value becomes permanent; a WHO? ticket is required to change it later. Usernames can be changed once every seven days, or sooner by using a Namecard ticket. Both tickets are currently free and are added from the Shop.
 
