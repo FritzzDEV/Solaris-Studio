@@ -38,6 +38,7 @@
   let memberProfiles = [];
   let firebaseSetupKnown = false;
   let firebaseEnabled = false;
+  let firebaseMissingSettings = [];
   let firebasePublicConfig = null;
   let firebaseClientPromise = null;
   let firebaseClient = null;
@@ -382,6 +383,7 @@
       const setup = await api('/api/firebase-config');
       firebaseSetupKnown = true;
       firebaseEnabled = setup.enabled === true;
+      firebaseMissingSettings = Array.isArray(setup.missingSettings) ? setup.missingSettings : [];
       firebasePublicConfig = setup.config || null;
       return true;
     } catch (error) {
@@ -582,7 +584,10 @@
   }
   function accountSecurityPanel(user) {
     if (!firebaseSetupKnown) return '';
-    if (!firebaseEnabled) return `<section class="account-panel account-panel-wide account-security-panel"><span class="section-eyebrow">SIGN-IN &amp; RECOVERY</span><h2>Email security</h2><p>Firebase Authentication is not set up yet. Follow the Firebase and Render setup steps in the README to enable verified email sign-in and password recovery.</p></section>`;
+    if (!firebaseEnabled) {
+      const missing = firebaseMissingSettings.length ? `<p>Render is missing: <strong>${esc(firebaseMissingSettings.join(', '))}</strong>.</p>` : '';
+      return `<section class="account-panel account-panel-wide account-security-panel"><span class="section-eyebrow">SIGN-IN &amp; RECOVERY</span><h2>Email security</h2><p>Firebase Authentication has not been detected by the server. Follow the Firebase and Render setup steps in the README.</p>${missing}</section>`;
+    }
     if (user.emailVerified && user.authEmail) return `<section class="account-panel account-panel-wide account-security-panel"><span class="section-eyebrow">SIGN-IN &amp; RECOVERY</span><h2>Email security</h2><p class="security-email"><strong>Verified email</strong><span>${esc(user.authEmail)}</span></p><p>Firebase manages your sign-in password. Send yourself a password reset email whenever you need one.</p><button class="btn btn-ghost btn-sm" type="button" data-password-reset data-reset-email="${esc(user.authEmail)}">Send password reset email</button><p class="form-message" data-security-message role="status"></p></section>`;
     return `<section class="account-panel account-panel-wide account-security-panel"><span class="section-eyebrow">SIGN-IN &amp; RECOVERY</span><h2>Connect a verified email</h2><p>Connect this Solaris profile to Firebase so you can verify your email and recover your password. This keeps your existing profile and username.</p><form id="link-email-form" class="security-link-form"><label>Email address<input name="email" type="email" required maxlength="254" autocomplete="email" value="${esc(user.authEmail || '')}"></label><label>Firebase password<input name="password" type="password" required minlength="10" maxlength="200" autocomplete="new-password" placeholder="At least 10 characters"></label><p class="form-message" id="link-email-message" role="status"></p><button class="btn btn-primary" type="submit">Connect email</button></form></section>`;
   }
@@ -648,7 +653,7 @@
       <form id="login-form" class="form auth-form"${!signupSelected ? '' : ' hidden'}><h2>Welcome back</h2>${firebaseReady ? emailField : '<label>Username<input name="username" required maxlength="24" autocomplete="username"></label>'}<label>Password<input name="password" type="password" required maxlength="200" autocomplete="current-password"></label>${firebaseReady ? '<button class="text-link auth-reset-link" type="button" data-reset-auth>Password forgotten? Send a reset email</button>' : ''}<button class="btn btn-primary" type="submit">Log in</button>${firebaseReady ? '<button class="btn btn-ghost guest-entry" type="button" data-legacy-login-toggle>Use an older Solaris username account</button>' : ''}</form>
       ${firebaseReady ? '<div id="legacy-login-panel" hidden><form id="legacy-login-form" class="form auth-form"><h2>Older Solaris account</h2><label>Username<input name="username" required maxlength="24" autocomplete="username"></label><label>Password<input name="password" type="password" required maxlength="200" autocomplete="current-password"></label><button class="btn btn-primary" type="submit">Log in to existing account</button><button class="btn btn-ghost guest-entry" type="button" data-legacy-login-toggle>Back to email sign-in</button></form></div>' : ''}
       ${signupSelected ? '<button class="btn btn-ghost guest-entry" type="button" data-view-guest>View site as guest</button>' : ''}
-      <p class="auth-note">${firebaseReady ? 'A verified email is required. Firebase securely manages email verification and password recovery.' : 'Email verification and password recovery become available after Firebase is configured. Until then, existing username accounts continue to work.'}</p></section></div>`;
+      <p class="auth-note">${firebaseReady ? 'A verified email is required. Firebase securely manages email verification and password recovery.' : firebaseSetupKnown && firebaseMissingSettings.length ? `Firebase setup is incomplete. Render is missing: ${esc(firebaseMissingSettings.join(', '))}.` : 'Email verification and password recovery become available after Firebase is configured. Until then, existing username accounts continue to work.'}</p></section></div>`;
   }
   function showAccount() {
     const params = new URLSearchParams(location.search);

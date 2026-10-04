@@ -40,9 +40,13 @@ Firebase Authentication handles email verification, email/password sign-in, and 
 | `FIREBASE_MESSAGING_SENDER_ID` | Web app sender ID (optional) |
 | `FIREBASE_STORAGE_BUCKET` | Web app storage bucket (optional) |
 | `FIREBASE_CLIENT_EMAIL` | Service account `client_email` |
-| `FIREBASE_PRIVATE_KEY` | Service account `private_key` (secret) |
+| `FIREBASE_PRIVATE_KEY` | Service account `private_key` (secret; paste as an environment variable) |
+| `FIREBASE_PRIVATE_KEY_FILE` | Optional path to a secret file containing only the PEM private key |
+| `FIREBASE_SERVICE_ACCOUNT_FILE` | Optional path to a secret file containing the downloaded service-account JSON |
 
 7. In **Authentication → Templates**, review the email verification and password reset messages and sender details. Save the settings, then redeploy or restart the Render service. The website exposes only the Firebase Web app settings to browsers; the Admin private key stays in the Render environment.
+
+If you store the private key as a Render Secret File, Render mounts it at `/etc/secrets/<filename>`; a secret file named `FIREBASE_PRIVATE_KEY` is detected automatically. For another filename, add `FIREBASE_PRIVATE_KEY_FILE=/etc/secrets/<filename>` as an environment variable. If the secret file contains the full downloaded JSON, set `FIREBASE_SERVICE_ACCOUNT_FILE=/etc/secrets/<filename>` instead. Render secret files are files, so adding one does not create a same-named environment variable.
 
 Firebase sends verification and password reset messages directly, so Solaris does not need a separate email server. For local testing, use the same environment variables and make sure `localhost` is an authorized Firebase domain.
 

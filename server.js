@@ -1,6 +1,7 @@
 'use strict';
 
 const http = require('node:http');
+const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -69,8 +70,40 @@ function parseCookies(header = '') {
 function sessionHash(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
+function firebaseCredentials() {
+  let serviceAccount = null;
+  let privateKeyFromFile = '';
+  const secretFile = process.env.FIREBASE_SERVICE_ACCOUNT_FILE || process.env.FIREBASE_PRIVATE_KEY_FILE || '';
+  const candidates = [
+    secretFile,
+    '/etc/secrets/FIREBASE_PRIVATE_KEY',
+    '/etc/secrets/firebase-service-account.json',
+    path.join(ROOT, 'FIREBASE_PRIVATE_KEY'),
+    path.join(ROOT, 'firebase-service-account.json')
+  ].filter((value, index, values) => value && values.indexOf(value) === index);
+  for (const candidate of candidates) {
+    try {
+      const contents = fsSync.readFileSync(candidate, 'utf8').trim();
+      if (contents.startsWith('{')) serviceAccount = JSON.parse(contents);
+      else if (candidate === secretFile || candidate.endsWith('FIREBASE_PRIVATE_KEY')) privateKeyFromFile = contents;
+    } catch (error) {
+      if (error.code !== 'ENOENT' && error.code !== 'EISDIR') console.error('FIREBASE SECRET FILE ERROR:', error.message);
+    }
+  }
+  let privateKey = process.env.FIREBASE_PRIVATE_KEY || privateKeyFromFile || serviceAccount?.private_key || '';
+  if (privateKey && !privateKey.includes('PRIVATE KEY') && fsSync.existsSync(privateKey)) {
+    try { privateKey = fsSync.readFileSync(privateKey, 'utf8').trim(); }
+    catch (error) { console.error('FIREBASE PRIVATE KEY FILE ERROR:', error.message); privateKey = ''; }
+  }
+  return {
+    projectId: text(process.env.FIREBASE_PROJECT_ID || serviceAccount?.project_id, 200),
+    clientEmail: text(process.env.FIREBASE_CLIENT_EMAIL || serviceAccount?.client_email, 300),
+    privateKey: String(privateKey).replace(/\\n/g, '\n')
+  };
+}
 function firebaseWebConfig() {
-  const projectId = text(process.env.FIREBASE_PROJECT_ID, 200);
+  const credentials = firebaseCredentials();
+  const projectId = text(process.env.FIREBASE_PROJECT_ID || credentials.projectId, 200);
   const config = {
     apiKey: text(process.env.FIREBASE_WEB_API_KEY, 300),
     authDomain: text(process.env.FIREBASE_AUTH_DOMAIN, 300),
@@ -79,21 +112,28 @@ function firebaseWebConfig() {
     storageBucket: text(process.env.FIREBASE_STORAGE_BUCKET, 300),
     messagingSenderId: text(process.env.FIREBASE_MESSAGING_SENDER_ID, 100)
   };
-  const adminReady = Boolean(process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY && projectId);
-  return { enabled: Boolean(adminReady && config.apiKey && config.authDomain && config.appId), config };
+  const missingSettings = [];
+  if (!projectId) missingSettings.push('FIREBASE_PROJECT_ID');
+  if (!credentials.clientEmail) missingSettings.push('FIREBASE_CLIENT_EMAIL or a Firebase service-account file');
+  if (!credentials.privateKey) missingSettings.push('FIREBASE_PRIVATE_KEY or FIREBASE_PRIVATE_KEY_FILE');
+  if (!config.apiKey) missingSettings.push('FIREBASE_WEB_API_KEY');
+  if (!config.authDomain) missingSettings.push('FIREBASE_AUTH_DOMAIN');
+  if (!config.appId) missingSettings.push('FIREBASE_APP_ID');
+  return { enabled: missingSettings.length === 0, config, missingSettings };
 }
 function getFirebaseAuth() {
   const setup = firebaseWebConfig();
   if (!setup.enabled) throw Object.assign(new Error('Firebase email sign-in has not been configured on the server yet.'), { status: 503 });
   if (firebaseAuth) return firebaseAuth;
   try {
+    const credentials = firebaseCredentials();
     const { cert, getApps, initializeApp } = require('firebase-admin/app');
     const { getAuth } = require('firebase-admin/auth');
     const app = getApps().find(item => item.name === 'solaris-firebase') || initializeApp({
       credential: cert({
-        projectId: setup.config.projectId,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: String(process.env.FIREBASE_PRIVATE_KEY).replace(/\\n/g, '\n')
+        projectId: credentials.projectId || setup.config.projectId,
+        clientEmail: credentials.clientEmail,
+        privateKey: credentials.privateKey
       }),
       projectId: setup.config.projectId
     }, 'solaris-firebase');
