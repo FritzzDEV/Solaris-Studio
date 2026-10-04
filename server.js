@@ -194,12 +194,14 @@ function privateProfile(account) {
   const ownerUsername = text(process.env.SOLARIS_OWNER_USERNAME || 'Fritzz Xenon', 24);
   const ownerExists = accounts.some(item => item.role === 'owner') || pausedAccounts.some(item => item.account.role === 'owner');
   const canClaimOwner = Boolean(process.env.SOLARIS_OWNER_SETUP_TOKEN && !ownerExists && account.profile.username.toLowerCase() === ownerUsername.toLowerCase());
-  return { ...publicProfile(account), friendCard: cleanFriendCard(account.profile.friendCard), tickets: account.tickets || { namecard: 0, who: 0 }, canClaimOwner, authEmail: account.email || '', emailVerified: account.emailVerified === true };
+  return { ...publicProfile(account), friendCard: cleanFriendCard(account.profile.friendCard), tickets: account.tickets || { namecard: 0, who: 0 }, canClaimOwner, authEmail: account.email || '', emailVerified: account.emailVerified === true, personalInfo: cleanPersonalInfo(account.personalInfo) };
 }
 function normalizeAccount(account) {
   let changed = false;
   if (!account.role) { account.role = 'member'; changed = true; }
   if (!account.tickets || typeof account.tickets !== 'object') { account.tickets = { namecard: 0, who: 0 }; changed = true; }
+  const personalInfo = cleanPersonalInfo(account.personalInfo);
+  if (!account.personalInfo || JSON.stringify(personalInfo) !== JSON.stringify(account.personalInfo)) { account.personalInfo = personalInfo; changed = true; }
   for (const kind of ['namecard', 'who']) {
     const count = Math.min(99, Math.max(0, Math.floor(Number(account.tickets[kind]) || 0)));
     if (account.tickets[kind] !== count) { account.tickets[kind] = count; changed = true; }
@@ -276,7 +278,13 @@ function imageData(value, maxLength = 950_000) {
   return value;
 }
 function emptyFriendCard() {
-  return { published: false, likes: '', dislikes: '', favoriteThing: '', lookingFor: '', personalityTags: [], backgroundImage: '', backgroundColor: '#fff8e9', borderStyle: 'solid', borderColor: '#dcae55', borderWidth: 2, buttonColor: '#3c315b', buttonTextColor: '#ffffff', buttonBorderStyle: 'solid', buttonBorderColor: '#3c315b', effect: 'glow' };
+  return { published: false, likes: '', dislikes: '', favoriteThing: '', lookingFor: '', personalityTags: [], aspectRatio: '1:1', backgroundImage: '', backgroundColor: '#fff8e9', backgroundOverlayColor: '#ffffff', backgroundOverlayOpacity: 18, borderStyle: 'solid', borderColor: '#dcae55', borderWidth: 2, borderImage: '', titleColor: '#302344', textColor: '#302344', mutedTextColor: '#766b7d', tagTextColor: '#302344', buttonColor: '#3c315b', buttonOverlayColor: '#ffffff', buttonOverlayOpacity: 0, buttonImage: '', buttonTextColor: '#ffffff', buttonBorderStyle: 'solid', buttonBorderColor: '#3c315b', buttonBorderImage: '', effect: 'glow' };
+}
+function cleanPersonalInfo(value) {
+  const input = value && typeof value === 'object' ? value : {};
+  const rawEmail = text(input.secondaryEmail, 254).toLowerCase();
+  const secondaryEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) ? rawEmail : '';
+  return { phoneNumber: text(input.phoneNumber, 40).replace(/[^0-9+(). x-]/gi, ''), secondaryEmail };
 }
 function cleanPersonalityTags(value) {
   const source = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
@@ -300,12 +308,15 @@ function cleanFriendCard(value) {
   const borderStyle = FRIEND_CARD_STROKES.has(input.borderStyle) ? input.borderStyle : defaults.borderStyle;
   const buttonBorderStyle = FRIEND_CARD_STROKES.has(input.buttonBorderStyle) ? input.buttonBorderStyle : defaults.buttonBorderStyle;
   const effect = FRIEND_CARD_EFFECTS.has(input.effect) ? input.effect : defaults.effect;
+  const aspectRatio = ['1:1', '2:3', '3:2', '4:5', '5:4'].includes(input.aspectRatio) ? input.aspectRatio : defaults.aspectRatio;
+  const opacity = (value, fallback) => Math.min(85, Math.max(0, Math.round(Number.isFinite(Number(value)) ? Number(value) : fallback)));
   return {
     published: input.published === true,
     likes: text(input.likes, 400), dislikes: text(input.dislikes, 400), favoriteThing: text(input.favoriteThing, 160), lookingFor: text(input.lookingFor, 300),
-    personalityTags: cleanPersonalityTags(input.personalityTags), backgroundImage: imageData(input.backgroundImage, 400_000),
-    backgroundColor: safeColor(input.backgroundColor, defaults.backgroundColor), borderStyle, borderColor: safeColor(input.borderColor, defaults.borderColor), borderWidth,
-    buttonColor: safeColor(input.buttonColor, defaults.buttonColor), buttonTextColor: safeColor(input.buttonTextColor, defaults.buttonTextColor),
+    personalityTags: cleanPersonalityTags(input.personalityTags), aspectRatio, backgroundImage: imageData(input.backgroundImage, 400_000), buttonImage: imageData(input.buttonImage, 400_000), borderImage: imageData(input.borderImage, 400_000), buttonBorderImage: imageData(input.buttonBorderImage, 400_000),
+    backgroundColor: safeColor(input.backgroundColor, defaults.backgroundColor), backgroundOverlayColor: safeColor(input.backgroundOverlayColor, defaults.backgroundOverlayColor), backgroundOverlayOpacity: opacity(input.backgroundOverlayOpacity, defaults.backgroundOverlayOpacity), borderStyle, borderColor: safeColor(input.borderColor, defaults.borderColor), borderWidth,
+    titleColor: safeColor(input.titleColor, defaults.titleColor), textColor: safeColor(input.textColor, defaults.textColor), mutedTextColor: safeColor(input.mutedTextColor, defaults.mutedTextColor), tagTextColor: safeColor(input.tagTextColor, defaults.tagTextColor),
+    buttonColor: safeColor(input.buttonColor, defaults.buttonColor), buttonOverlayColor: safeColor(input.buttonOverlayColor, defaults.buttonOverlayColor), buttonOverlayOpacity: opacity(input.buttonOverlayOpacity, defaults.buttonOverlayOpacity), buttonTextColor: safeColor(input.buttonTextColor, defaults.buttonTextColor),
     buttonBorderStyle, buttonBorderColor: safeColor(input.buttonBorderColor, defaults.buttonBorderColor), effect
   };
 }
@@ -332,7 +343,7 @@ function cleanProfile(input, existing = {}, allowMemberFriendCard = true) {
   const socials = validateSocials(input.socials);
   const favorites = ['game', 'developer', 'artwork'].map(type => validateFavorite(input.favorites && input.favorites[type], type)).filter(Boolean);
   const installedGames = Array.isArray(input.installedGames) ? [...new Set(input.installedGames.map(value => text(value, 80)).filter(Boolean))].slice(0, 20) : [];
-  const friendCard = allowMemberFriendCard ? cleanFriendCard(input.friendCard) : emptyFriendCard();
+  const friendCard = allowMemberFriendCard ? cleanFriendCard(input.friendCard && typeof input.friendCard === 'object' ? input.friendCard : existing.friendCard) : emptyFriendCard();
   friendCard.published = allowMemberFriendCard && existing.friendCard?.published === true;
   return {
     username: text(input.username, 24) || existing.username || '',
@@ -394,6 +405,18 @@ async function handleApi(req, res, pathname) {
     const account = await getAccount(req);
     return send(res, 200, { user: account ? privateProfile(account) : null });
   }
+  if (req.method === 'PUT' && pathname === '/api/personal-info') {
+    const account = await getAccount(req);
+    if (!account) return send(res, 401, { error: 'Log in to update your private account information.' });
+    const input = await readBody(req);
+    const rawSecondaryEmail = text(input.secondaryEmail, 254).toLowerCase();
+    if (rawSecondaryEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawSecondaryEmail)) return send(res, 400, { error: 'Enter a valid secondary email address.' });
+    const previous = account.personalInfo;
+    account.personalInfo = cleanPersonalInfo(input);
+    try { await saveAccounts(); }
+    catch (error) { account.personalInfo = previous; throw error; }
+    return send(res, 200, { user: privateProfile(account), message: 'Your private contact information has been saved.' });
+  }
   if (req.method === 'GET' && pathname === '/api/public-profile') {
     const query = new URL(req.url, `http://${req.headers.host || 'localhost'}`).searchParams;
     const account = accounts.find(item => item.id === query.get('id'));
@@ -414,6 +437,19 @@ async function handleApi(req, res, pathname) {
       friendCard: account.profile.friendCard?.published === true ? cleanFriendCard(account.profile.friendCard) : null
     }));
     return send(res, 200, { members });
+  }
+  if (req.method === 'PUT' && pathname === '/api/member-friend-card/save') {
+    const account = await getAccount(req);
+    if (!account) return send(res, 401, { error: 'Log in to save your Friend-Card.' });
+    if (account.role === 'owner' || account.profile.primaryRole !== 'member') return send(res, 403, { error: 'Only Member accounts can edit a Member Friend-Card.' });
+    const input = await readBody(req);
+    const previousFriendCard = account.profile.friendCard;
+    const friendCard = cleanFriendCard(input.friendCard);
+    friendCard.published = previousFriendCard?.published === true;
+    account.profile.friendCard = friendCard;
+    try { await saveAccounts(); }
+    catch (error) { account.profile.friendCard = previousFriendCard; throw error; }
+    return send(res, 200, { user: privateProfile(account), message: friendCard.published ? 'Your posted Friend-Card has been updated.' : 'Your Friend-Card is saved privately.' });
   }
   if (req.method === 'POST' && pathname === '/api/member-friend-card/post') {
     const account = await getAccount(req);
@@ -524,22 +560,12 @@ async function handleApi(req, res, pathname) {
     if (!validUsername(username)) return send(res, 400, { error: 'Use 3–24 letters, numbers, dots, dashes, underscores, or single spaces.' });
     if (accounts.some(account => account.profile.username.toLowerCase() === username.toLowerCase()) || pausedAccounts.some(item => item.account.profile.username.toLowerCase() === username.toLowerCase())) return send(res, 409, { error: 'That username is already taken or temporarily reserved by a paused account.' });
     if ((!claims || input.password) && (typeof input.password !== 'string' || input.password.length < 10 || input.password.length > 200)) return send(res, 400, { error: 'Use a password between 10 and 200 characters.' });
-    const ownerUsername = text(process.env.SOLARIS_OWNER_USERNAME || 'Fritzz Xenon', 24);
-    const setupCode = String(input.ownerSetupCode || '');
-    const ownerExists = accounts.some(account => account.role === 'owner') || pausedAccounts.some(item => item.account.role === 'owner');
-    const reservedOwnerName = !ownerExists && ownerUsername && username.toLowerCase() === ownerUsername.toLowerCase();
-    if (reservedOwnerName && !setupCode) return send(res, 403, { error: 'This username is reserved for the studio owner. Enter the owner setup code.' });
-    let claimOwner = false;
-    if (setupCode) {
-      if (ownerExists || !ownerUsername || !process.env.SOLARIS_OWNER_SETUP_TOKEN || !secureEqual(setupCode, process.env.SOLARIS_OWNER_SETUP_TOKEN) || username.toLowerCase() !== ownerUsername.toLowerCase()) return send(res, 403, { error: 'The owner setup code or username is not valid.' });
-      claimOwner = true;
-    }
     const salt = crypto.randomBytes(16).toString('hex');
     const password = typeof input.password === 'string' && input.password.length >= 10 ? input.password : crypto.randomBytes(48).toString('base64url');
     const passwordHash = Buffer.from(await scrypt(password, salt, 64)).toString('hex');
     const id = crypto.randomUUID();
     if (claims && (accounts.some(item => item.firebaseUid === claims.uid) || pausedAccounts.some(item => item.account.firebaseUid === claims.uid || item.account.email?.toLowerCase() === String(claims.email).toLowerCase()))) return send(res, 409, { error: 'This verified email already has a Solaris account. Log in instead.' });
-    const account = { id, salt, passwordHash, ...(claims ? { firebaseUid: claims.uid, email: String(claims.email).toLowerCase(), emailVerified: true } : {}), role: claimOwner ? 'owner' : 'member', tickets: { namecard: 0, who: 0 },
+    const account = { id, salt, passwordHash, ...(claims ? { firebaseUid: claims.uid, email: String(claims.email).toLowerCase(), emailVerified: true } : {}), role: 'member', tickets: { namecard: 0, who: 0 },
       profile: cleanProfile({ ...input.profile, username }) };
     accounts.push(account);
     try { await saveAccounts(); }

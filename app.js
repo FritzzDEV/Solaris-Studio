@@ -26,7 +26,7 @@
     owner:'Owns Solaris Studio and manages its team roles.'
   };
   const SECONDARY_ROLE_TAGS = ['Scripter','Coder','Modeler','Tester','Updater','Announcer','Debugger','App tester','Artist'];
-  const EMPTY_FRIEND_CARD = {published:false,likes:'',dislikes:'',favoriteThing:'',lookingFor:'',personalityTags:[],backgroundImage:'',backgroundColor:'#fff8e9',borderStyle:'solid',borderColor:'#dcae55',borderWidth:2,buttonColor:'#3c315b',buttonTextColor:'#ffffff',buttonBorderStyle:'solid',buttonBorderColor:'#3c315b',effect:'glow'};
+  const EMPTY_FRIEND_CARD = {published:false,likes:'',dislikes:'',favoriteThing:'',lookingFor:'',personalityTags:[],aspectRatio:'1:1',backgroundImage:'',backgroundColor:'#fff8e9',backgroundOverlayColor:'#ffffff',backgroundOverlayOpacity:18,borderStyle:'solid',borderColor:'#dcae55',borderWidth:2,borderImage:'',titleColor:'#302344',textColor:'#302344',mutedTextColor:'#766b7d',tagTextColor:'#302344',buttonColor:'#3c315b',buttonOverlayColor:'#ffffff',buttonOverlayOpacity:0,buttonImage:'',buttonTextColor:'#ffffff',buttonBorderStyle:'solid',buttonBorderColor:'#3c315b',buttonBorderImage:'',effect:'glow'};
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -49,6 +49,8 @@
     if (isGuest) sessionStorage.setItem('solaris-guest','1');
   } catch (_) {}
   let editingProfile = false;
+  let editingFriendCard = false;
+  let viewingPersonalInfo = false;
   let cropSession = null;
   let cropDialog = null;
   let toastTimer;
@@ -123,13 +125,24 @@
   function normalizedFriendCard(value) {
     return {...EMPTY_FRIEND_CARD,...(value && typeof value === 'object' ? value : {}),personalityTags:Array.isArray(value?.personalityTags) ? value.personalityTags : []};
   }
-  function friendCardStyle(card) {
-    return `--friend-bg:${esc(card.backgroundColor)};--friend-stroke:${esc(card.borderColor)};--friend-stroke-style:${esc(card.borderStyle)};--friend-stroke-width:${Number(card.borderWidth) || 2}px;--friend-button-bg:${esc(card.buttonColor)};--friend-button-text:${esc(card.buttonTextColor)};--friend-button-stroke:${esc(card.buttonBorderColor)};--friend-button-stroke-style:${esc(card.buttonBorderStyle)}`;
+  const friendCardRatios = ['1:1','2:3','3:2','4:5','5:4'];
+  function colorWithOpacity(color, opacity) {
+    const match = /^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(color || '');
+    if (!match) return `rgba(255,255,255,${Math.max(0,Math.min(1,Number(opacity) / 100 || 0))})`;
+    return `rgba(${parseInt(match[1],16)},${parseInt(match[2],16)},${parseInt(match[3],16)},${Math.max(0,Math.min(1,Number(opacity) / 100 || 0))})`;
   }
-  function friendCardMarkup(member, full = false, editor = false) {
+  function friendCardStyle(card) {
+    const ratio = friendCardRatios.includes(card.aspectRatio) ? card.aspectRatio.replace(':',' / ') : '1 / 1';
+    return `--friend-ratio:${ratio};--friend-bg:${esc(card.backgroundColor)};--friend-stroke:${esc(card.borderColor)};--friend-stroke-style:${esc(card.borderStyle)};--friend-stroke-width:${Number(card.borderWidth) || 2}px;--friend-title-color:${esc(card.titleColor)};--friend-text-color:${esc(card.textColor)};--friend-muted-color:${esc(card.mutedTextColor)};--friend-tag-text-color:${esc(card.tagTextColor)};--friend-button-bg:${esc(card.buttonColor)};--friend-button-text:${esc(card.buttonTextColor)};--friend-button-stroke:${esc(card.buttonBorderColor)};--friend-button-stroke-style:${esc(card.buttonBorderStyle)}${card.borderImage ? `;--friend-border-image:url(&quot;${esc(card.borderImage)}&quot;);border:var(--friend-stroke-width) solid transparent;border-image-source:var(--friend-border-image);border-image-slice:28;border-image-width:1` : ''}${card.buttonBorderImage ? `;--friend-button-border-image:url(&quot;${esc(card.buttonBorderImage)}&quot;)` : ''}`;
+  }
+  function friendCardButtonStyle(card) {
+    const image = card.buttonImage ? `;background-image:linear-gradient(${colorWithOpacity(card.buttonOverlayColor,card.buttonOverlayOpacity)},${colorWithOpacity(card.buttonOverlayColor,card.buttonOverlayOpacity)}),url(&quot;${esc(card.buttonImage)}&quot;)` : '';
+    return `--friend-button-bg:${esc(card.buttonColor)};--friend-button-text:${esc(card.buttonTextColor)};--friend-button-stroke:${esc(card.buttonBorderColor)};--friend-button-stroke-style:${esc(card.buttonBorderStyle)}${card.buttonBorderImage ? `;--friend-button-border-image:url(&quot;${esc(card.buttonBorderImage)}&quot;);border:2px solid transparent;border-image-source:var(--friend-button-border-image);border-image-slice:28;border-image-width:1` : ''}${image}`;
+  }
+  function friendCardMarkup(member, full = false, editor = false, openAction = '') {
     const card = normalizedFriendCard(member.friendCard);
     const effect = ['none','glow','lift','shine'].includes(card.effect) ? card.effect : 'glow';
-    const image = card.backgroundImage ? `background-image:linear-gradient(135deg,#ffffffba,#fff9e1b8),url(&quot;${esc(card.backgroundImage)}&quot;)` : '';
+    const image = card.backgroundImage ? `background-image:linear-gradient(${colorWithOpacity(card.backgroundOverlayColor,card.backgroundOverlayOpacity)},${colorWithOpacity(card.backgroundOverlayColor,card.backgroundOverlayOpacity)}),url(&quot;${esc(card.backgroundImage)}&quot;)` : '';
     const title = esc(member.username || 'Solaris Member');
     const profileAvatar = member.id && !editor ? `<a class="friend-card-profile-link" href="account.html?user=${encodeURIComponent(member.id)}" aria-label="Open ${title}’s full profile">${avatar(member.username,'friend-card-avatar',member.avatarImage)}</a>` : avatar(member.username,'friend-card-avatar',member.avatarImage);
     const tags = card.personalityTags.map(tag => `<span class="friend-personality-tag">${esc(tag)}</span>`).join('');
@@ -137,43 +150,53 @@
       ['What I like',card.likes],['What I dislike',card.dislikes],['My favorite thing',card.favoriteThing],['The kind of friend I’m looking for',card.lookingFor]
     ].map(([label,value]) => `<section class="friend-detail"><h3>${label}</h3><p>${esc(value || 'Not added yet.')}</p></section>`).join('');
     const searchData = !full && !editor ? esc([member.username,card.likes,card.dislikes,card.favoriteThing,card.lookingFor,...card.personalityTags].join(' ')) : '';
+    const action = openAction === 'own' ? 'data-open-own-friend-card' : `data-open-friend-card="${esc(member.id || '')}"`;
     return `<article class="friend-card friend-card-effect-${effect}${full ? ' friend-card-full' : ' friend-card-preview'}"${!full && !editor ? ` data-friend-member data-friend-search="${searchData}"` : ''} style="${friendCardStyle(card)};${image}" aria-label="${title} Friend-Card">
       <div class="friend-card-top">${profileAvatar}<div class="friend-card-name"><span class="section-eyebrow">SOLARIS MEMBER</span><h2>${title}</h2></div>${!full ? '<span class="friend-card-sun" aria-hidden="true">✦</span>' : ''}</div>
       ${full ? `<div class="friend-card-details">${details}</div>` : `<p class="friend-card-teaser">${esc(card.likes || card.favoriteThing || 'A little introduction is coming soon.')}</p>${card.favoriteThing ? `<p class="friend-card-favorite"><span>Favorite thing</span><strong>${esc(card.favoriteThing)}</strong></p>` : ''}`}
       ${tags ? `<div class="friend-personality-list" aria-label="Personality tags">${full ? tags : card.personalityTags.slice(0,4).map(tag => `<span class="friend-personality-tag">${esc(tag)}</span>`).join('')}${!full && card.personalityTags.length > 4 ? `<span class="friend-personality-more">+${card.personalityTags.length - 4}</span>` : ''}</div>` : !full ? '' : '<p class="friend-card-empty-tags">No personality tags added yet.</p>'}
-      ${full ? `<button class="friend-card-open friend-card-custom-button" type="button" data-copy-member-link="${esc(member.id || '')}" style="--friend-button-bg:${esc(card.buttonColor)};--friend-button-text:${esc(card.buttonTextColor)};--friend-button-stroke:${esc(card.buttonBorderColor)};--friend-button-stroke-style:${esc(card.buttonBorderStyle)}">Copy profile link</button>` : `<button class="friend-card-open" type="button"${editor ? ' disabled' : ` data-open-friend-card="${esc(member.id || '')}"`} style="--friend-button-bg:${esc(card.buttonColor)};--friend-button-text:${esc(card.buttonTextColor)};--friend-button-stroke:${esc(card.buttonBorderColor)};--friend-button-stroke-style:${esc(card.buttonBorderStyle)}">Open Friend-Card</button>`}
+      ${full ? `<button class="friend-card-open friend-card-custom-button" type="button"${editor ? ' disabled' : ` data-copy-member-link="${esc(member.id || '')}"`} style="${friendCardButtonStyle(card)}">${editor ? 'Preview button' : 'Copy profile link'}</button>` : `<button class="friend-card-open" type="button"${editor ? ' disabled' : action} style="${friendCardButtonStyle(card)}">Open Friend-Card</button>`}
     </article>`;
+  }
+  function friendCardAssetRow(title, field, value, supportsStk = false) {
+    const thumb = value ? `<span class="friend-card-image-thumb" data-friend-card-thumb="${field}" style="background-image:url(&quot;${esc(value)}&quot;)"></span>` : `<span class="friend-card-image-thumb friend-card-image-empty" data-friend-card-thumb="${field}">No image selected</span>`;
+    return `<div class="friend-card-asset-row" data-friend-card-asset-row="${field}"><div><strong>${title}</strong><small>${supportsStk ? 'Upload JPG, PNG, WebP, or a Solaris .stk stroke file.' : 'Upload a JPG, PNG, or WebP image.'} Images are resized before saving.</small></div>${thumb}<input type="file" accept="image/png,image/jpeg,image/webp${supportsStk ? ',.stk,application/json' : ''}" data-friend-card-image="${field}" hidden><input type="hidden" name="${field}" value="${esc(value)}"><div class="friend-card-asset-actions"><button class="btn btn-ghost btn-sm" type="button" data-choose-friend-card-image="${field}">Choose image</button><button class="btn btn-ghost btn-sm" type="button" data-remove-friend-card-image="${field}"${value ? '' : ' hidden'}>Remove</button>${supportsStk ? `<button class="btn btn-ghost btn-sm" type="button" data-export-stk="${field}"${value ? '' : ' disabled'}>Export .stk</button>` : ''}</div></div>`;
   }
   function friendCardEditorSection(user) {
     if (user.accountRole === 'owner' || user.primaryRole !== 'member') return '';
     const card = normalizedFriendCard(user.friendCard);
-    const imagePreview = card.backgroundImage ? `<span class="friend-card-image-thumb" id="friend-card-image-thumb" style="background-image:url(&quot;${esc(card.backgroundImage)}&quot;)"></span>` : '<span class="friend-card-image-thumb friend-card-image-empty" id="friend-card-image-thumb">No image selected</span>';
     const options = (values, selected, labels = values) => values.map((value,index) => `<option value="${esc(value)}"${value === selected ? ' selected' : ''}>${esc(labels[index] || value)}</option>`).join('');
-    return `<section class="account-panel account-panel-wide friend-card-editor"><div class="panel-heading"><div><h2>Your Friend-Card</h2><p>Build a custom introduction for the Members page. Upload your own image and choose its colors, border, button look, and effect.</p></div></div>
+    return `<form id="friend-card-form" class="friend-card-editor-form"><section class="account-panel account-panel-wide friend-card-editor"><div class="panel-heading"><div><h2>Edit Custom Friend-Card</h2><p>Design your member card, then save it privately or post it to the Members page. Preview and full view keep the same selected shape.</p></div></div>
       <div class="friend-card-editor-layout"><div class="friend-card-editor-fields">
         <label>What I like<textarea name="friendCardLikes" rows="3" maxlength="400" placeholder="Games, hobbies, music…">${esc(card.likes)}</textarea></label>
         <label>What I dislike<textarea name="friendCardDislikes" rows="3" maxlength="400" placeholder="Things you prefer to avoid…">${esc(card.dislikes)}</textarea></label>
         <label>My favorite thing<input name="friendCardFavoriteThing" maxlength="160" value="${esc(card.favoriteThing)}" placeholder="A favorite game, hobby, or topic"></label>
         <label>What kind of friend I’m looking for<textarea name="friendCardLookingFor" rows="3" maxlength="300" placeholder="Describe the kind of friend you hope to meet…">${esc(card.lookingFor)}</textarea></label>
         <label>Personality tags<input name="friendCardPersonalityTags" maxlength="580" value="${esc(card.personalityTags.join(', '))}" placeholder="Funny, cool, dependable, lazy…"><small>Separate tags with commas. Add up to 20.</small></label>
-        <div class="friend-card-asset-row"><div><strong>Friend-Card background image</strong><small>Upload your own JPG, PNG, or WebP image. It is resized before saving.</small></div>${imagePreview}<input type="file" accept="image/png,image/jpeg,image/webp" data-friend-card-image hidden><input type="hidden" name="friendCardBackgroundImage" value="${esc(card.backgroundImage)}"><div class="friend-card-asset-actions"><button class="btn btn-ghost btn-sm" type="button" data-choose-friend-card-image>Choose image</button><button class="btn btn-ghost btn-sm" type="button" data-remove-friend-card-image${card.backgroundImage ? '' : ' hidden'}>Remove</button></div></div>
-        <div class="friend-design-grid"><label>Card background<input type="color" name="friendCardBackgroundColor" value="${esc(card.backgroundColor)}"></label><label>Card stroke<input type="color" name="friendCardBorderColor" value="${esc(card.borderColor)}"></label><label>Stroke design<select name="friendCardBorderStyle">${options(['solid','dashed','dotted','double','groove','ridge'],card.borderStyle,['Solid','Dashed','Dotted','Double','Groove','Ridge'])}</select></label><label>Stroke width<select name="friendCardBorderWidth">${options(['1','2','3','4','5','6','7','8'],String(card.borderWidth),['1 px','2 px','3 px','4 px','5 px','6 px','7 px','8 px'])}</select></label><label>Card effect<select name="friendCardEffect">${options(['none','glow','lift','shine'],card.effect,['None','Soft glow','Lift on hover','Shine'])}</select></label></div>
-        <div class="friend-design-grid friend-button-design"><h3>Open Friend-Card button</h3><label>Button background<input type="color" name="friendCardButtonColor" value="${esc(card.buttonColor)}"></label><label>Button text<input type="color" name="friendCardButtonTextColor" value="${esc(card.buttonTextColor)}"></label><label>Button stroke<input type="color" name="friendCardButtonBorderColor" value="${esc(card.buttonBorderColor)}"></label><label>Button stroke design<select name="friendCardButtonBorderStyle">${options(['solid','dashed','dotted','double','groove','ridge'],card.buttonBorderStyle,['Solid','Dashed','Dotted','Double','Groove','Ridge'])}</select></label></div>
-      </div><div class="friend-card-editor-preview"><span class="section-eyebrow">LIVE PREVIEW</span><div id="friend-card-live-preview">${friendCardMarkup({...user,friendCard:card},false,true)}</div></div></div><div class="friend-card-publish-row"><div><strong>${card.published ? 'Your Friend-Card is posted.' : 'Your Friend-Card is private.'}</strong><p>${card.published ? 'Save profile changes to update your posted card.' : 'It will appear in Members only after you post it.'}</p></div><button class="btn btn-primary" type="button" data-post-friend-card>${card.published ? 'Update posted Friend-Card' : 'Post custom friend card'}</button><p class="form-message" id="friend-card-post-message" role="status"></p></div></section>`;
+        <label>Card shape<select name="friendCardAspectRatio">${options(friendCardRatios,card.aspectRatio)}</select></label>
+        ${friendCardAssetRow('Friend-Card background image','friendCardBackgroundImage',card.backgroundImage)}
+        <div class="friend-design-grid"><h3>Friend-Card appearance</h3><label>Card background<input type="color" name="friendCardBackgroundColor" value="${esc(card.backgroundColor)}"></label><label>Background image tint<input type="color" name="friendCardBackgroundOverlayColor" value="${esc(card.backgroundOverlayColor)}"></label><label>Tint strength<input type="range" name="friendCardBackgroundOverlayOpacity" min="0" max="85" step="1" value="${esc(card.backgroundOverlayOpacity)}"></label><label>Title text<input type="color" name="friendCardTitleColor" value="${esc(card.titleColor)}"></label><label>Main text<input type="color" name="friendCardTextColor" value="${esc(card.textColor)}"></label><label>Muted text<input type="color" name="friendCardMutedTextColor" value="${esc(card.mutedTextColor)}"></label><label>Tag text<input type="color" name="friendCardTagTextColor" value="${esc(card.tagTextColor)}"></label><label>Card stroke<input type="color" name="friendCardBorderColor" value="${esc(card.borderColor)}"></label><label>Stroke design<select name="friendCardBorderStyle">${options(['solid','dashed','dotted','double','groove','ridge'],card.borderStyle,['Solid','Dashed','Dotted','Double','Groove','Ridge'])}</select></label><label>Stroke width<select name="friendCardBorderWidth">${options(['1','2','3','4','5','6','7','8'],String(card.borderWidth),['1 px','2 px','3 px','4 px','5 px','6 px','7 px','8 px'])}</select></label><label>Card effect<select name="friendCardEffect">${options(['none','glow','lift','shine'],card.effect,['None','Soft glow','Lift on hover','Shine'])}</select></label></div>
+        ${friendCardAssetRow('Friend-Card stroke image','friendCardBorderImage',card.borderImage,true)}
+        ${friendCardAssetRow('Button background image','friendCardButtonImage',card.buttonImage)}
+        <div class="friend-design-grid friend-button-design"><h3>Open Friend-Card button</h3><label>Button background<input type="color" name="friendCardButtonColor" value="${esc(card.buttonColor)}"></label><label>Button image tint<input type="color" name="friendCardButtonOverlayColor" value="${esc(card.buttonOverlayColor)}"></label><label>Tint strength<input type="range" name="friendCardButtonOverlayOpacity" min="0" max="85" step="1" value="${esc(card.buttonOverlayOpacity)}"></label><label>Button text<input type="color" name="friendCardButtonTextColor" value="${esc(card.buttonTextColor)}"></label><label>Button stroke<input type="color" name="friendCardButtonBorderColor" value="${esc(card.buttonBorderColor)}"></label><label>Button stroke design<select name="friendCardButtonBorderStyle">${options(['solid','dashed','dotted','double','groove','ridge'],card.buttonBorderStyle,['Solid','Dashed','Dotted','Double','Groove','Ridge'])}</select></label></div>
+        ${friendCardAssetRow('Button stroke image','friendCardButtonBorderImage',card.buttonBorderImage,true)}
+      </div><div class="friend-card-editor-preview"><span class="section-eyebrow">PREVIEW &amp; FULL VIEW</span><div class="friend-card-preview-pair"><div><small>Member page preview</small><div id="friend-card-live-preview">${friendCardMarkup({...user,friendCard:card},false,true)}</div></div><div><small>Full view</small><div id="friend-card-full-preview" class="friend-card-full-preview">${friendCardMarkup({...user,friendCard:card},true,true)}</div></div></div></div></div><div class="friend-card-publish-row"><div><strong>${card.published ? 'Your Friend-Card is posted.' : 'Your Friend-Card is private.'}</strong><p>${card.published ? 'Saving changes will update the card shown on the Members page.' : 'It will appear in Members only after you post it.'}</p></div><div class="friend-card-editor-actions"><button class="btn btn-ghost" type="button" data-save-friend-card>Save Friend-Card</button><button class="btn btn-primary" type="button" data-post-friend-card>${card.published ? 'Update posted Friend-Card' : 'Post custom friend card'}</button></div><p class="form-message" id="friend-card-post-message" role="status"></p></div></section><div class="actions editor-actions"><button class="btn btn-ghost" type="button" data-cancel-edit>Back to profile</button></div></form>`;
   }
   function friendCardFromForm(form) {
     if (!form?.elements.friendCardLikes) return null;
     const get = name => form.elements[name]?.value?.trim() || '';
     return {
-      likes:get('friendCardLikes'),dislikes:get('friendCardDislikes'),favoriteThing:get('friendCardFavoriteThing'),lookingFor:get('friendCardLookingFor'),personalityTags:get('friendCardPersonalityTags').split(',').map(item => item.trim()).filter(Boolean),backgroundImage:get('friendCardBackgroundImage'),backgroundColor:get('friendCardBackgroundColor'),borderStyle:get('friendCardBorderStyle'),borderColor:get('friendCardBorderColor'),borderWidth:Number(get('friendCardBorderWidth')),
-      buttonColor:get('friendCardButtonColor'),buttonTextColor:get('friendCardButtonTextColor'),buttonBorderStyle:get('friendCardButtonBorderStyle'),buttonBorderColor:get('friendCardButtonBorderColor'),effect:get('friendCardEffect')
+      likes:get('friendCardLikes'),dislikes:get('friendCardDislikes'),favoriteThing:get('friendCardFavoriteThing'),lookingFor:get('friendCardLookingFor'),personalityTags:get('friendCardPersonalityTags').split(',').map(item => item.trim()).filter(Boolean),aspectRatio:get('friendCardAspectRatio'),backgroundImage:get('friendCardBackgroundImage'),backgroundColor:get('friendCardBackgroundColor'),backgroundOverlayColor:get('friendCardBackgroundOverlayColor'),backgroundOverlayOpacity:Number(get('friendCardBackgroundOverlayOpacity')),borderStyle:get('friendCardBorderStyle'),borderColor:get('friendCardBorderColor'),borderWidth:Number(get('friendCardBorderWidth')),borderImage:get('friendCardBorderImage'),titleColor:get('friendCardTitleColor'),textColor:get('friendCardTextColor'),mutedTextColor:get('friendCardMutedTextColor'),tagTextColor:get('friendCardTagTextColor'),
+      buttonColor:get('friendCardButtonColor'),buttonOverlayColor:get('friendCardButtonOverlayColor'),buttonOverlayOpacity:Number(get('friendCardButtonOverlayOpacity')),buttonImage:get('friendCardButtonImage'),buttonTextColor:get('friendCardButtonTextColor'),buttonBorderStyle:get('friendCardButtonBorderStyle'),buttonBorderColor:get('friendCardButtonBorderColor'),buttonBorderImage:get('friendCardButtonBorderImage'),effect:get('friendCardEffect')
     };
   }
   function updateFriendCardEditorPreview() {
-    const form = $('#profile-form');
+    const form = $('#friend-card-form');
     const preview = $('#friend-card-live-preview');
     const card = friendCardFromForm(form);
     if (preview && card && currentUser) preview.innerHTML = friendCardMarkup({...currentUser,friendCard:card},false,true);
+    const fullPreview = $('#friend-card-full-preview');
+    if (fullPreview && card && currentUser) fullPreview.innerHTML = friendCardMarkup({...currentUser,friendCard:card},true,true);
   }
   async function compressFriendCardImage(file) {
     if (!file || !/^image\/(?:jpeg|png|webp)$/.test(file.type)) throw new Error('Choose a JPG, PNG, or WebP image.');
@@ -196,6 +219,65 @@
       }
     } finally { bitmap.close?.(); }
     throw new Error('This image could not be resized enough. Try a smaller image.');
+  }
+  async function readFriendCardAsset(file) {
+    if (!file) throw new Error('Choose an image first.');
+    if (file.name.toLowerCase().endsWith('.stk')) {
+      if (file.size > 450_000) throw new Error('Choose a .stk file smaller than 450 KB.');
+      const payload = JSON.parse(await file.text());
+      const image = payload?.format === 'solaris-stroke-v1' ? payload.image : '';
+      if (typeof image !== 'string' || !/^data:image\/(?:webp|jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$/.test(image) || image.length > 390_000) throw new Error('This .stk file is not a supported Solaris stroke asset.');
+      return image;
+    }
+    return compressFriendCardImage(file);
+  }
+  function exportFriendCardStk(field) {
+    const image = $('#friend-card-form')?.elements[field]?.value;
+    if (!image) return;
+    const blob = new Blob([JSON.stringify({format:'solaris-stroke-v1',image})],{type:'application/vnd.solaris.stroke+json'});
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${field.replace(/^friendCard/,'').replace(/Image$/,'').toLowerCase()}.stk`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href),1000);
+  }
+  async function saveFriendCardChanges(publish, button) {
+    const friendCard = friendCardFromForm($('#friend-card-form'));
+    if (!friendCard) return;
+    button.disabled = true;
+    try {
+      const result = await api(publish ? '/api/member-friend-card/post' : '/api/member-friend-card/save',publish ? 'POST' : 'PUT',{friendCard});
+      currentUser = result.user;
+      profilePreview();
+      const postButton = $('[data-post-friend-card]');
+      const status = $('.friend-card-publish-row strong');
+      const description = $('.friend-card-publish-row>div p');
+      if (currentUser.friendCard?.published) {
+        if (postButton) postButton.textContent = 'Update posted Friend-Card';
+        if (status) status.textContent = 'Your Friend-Card is posted.';
+        if (description) description.textContent = 'Saving changes will update the card shown on the Members page.';
+      } else {
+        if (status) status.textContent = 'Your Friend-Card is private.';
+        if (description) description.textContent = 'It will appear in Members only after you post it.';
+      }
+      setMessage('#friend-card-post-message',result.message,false);
+      if (currentUser.friendCard?.published) await loadMemberProfiles();
+    } catch (error) { setMessage('#friend-card-post-message',error.message); }
+    finally { button.disabled = false; }
+  }
+  function openFriendCardDialog(member) {
+    let dialog = $('#friend-card-dialog');
+    if (!dialog) {
+      dialog = document.createElement('dialog');
+      dialog.id = 'friend-card-dialog';
+      dialog.className = 'friend-card-dialog';
+      dialog.setAttribute('aria-label','Full Friend-Card');
+      dialog.innerHTML = `<button class="friend-card-dialog-close" type="button" data-close-friend-card aria-label="Close Friend-Card">×</button><div id="friend-card-dialog-content"></div>`;
+      dialog.addEventListener('click',event => { if (event.target === dialog) dialog.close(); });
+      document.body.append(dialog);
+    }
+    $('#friend-card-dialog-content',dialog).innerHTML = friendCardMarkup(member,true);
+    dialog.showModal();
   }
   async function loadMemberProfiles() {
     const grid = $('#member-card-grid');
@@ -426,7 +508,6 @@
     if (!user || !user.emailVerified) throw new Error('Verify your email before finishing account setup.');
     const result = await api('/api/signup','POST',{
       username:metadata.username,
-      ownerSetupCode:metadata.ownerSetupCode || '',
       password,
       idToken:await user.getIdToken(true),
       profile:{}
@@ -434,7 +515,7 @@
     try { localStorage.removeItem('solaris-pending-signup'); } catch (_) {}
     currentUser = result.user;
     leaveGuestMode();
-    editingProfile = false;
+    editingProfile = false; editingFriendCard = false; viewingPersonalInfo = false;
     profilePreview();
     if (page === 'account') showAccount();
     else renderPage();
@@ -464,6 +545,7 @@
     const result = await api('/api/login','POST',{idToken:await user.getIdToken(true),password});
     currentUser = result.user;
     leaveGuestMode();
+    editingProfile = false; editingFriendCard = false; viewingPersonalInfo = false;
     profilePreview();
     showAccount();
     toast(`Welcome back, ${currentUser.username}.`);
@@ -596,13 +678,15 @@
     const favoriteCards = [['game',favorites.game],['developer',favorites.developer],['artwork',favorites.artwork]].map(([type,item]) => favoriteCard(type,item)).filter(Boolean);
     const installed = user.installedGames?.length ? user.installedGames.map(game => `<span class="tag">${esc(game)}</span>`).join('') : '<p class="empty-inline">No installed games added yet.</p>';
     const roleLabel = user.accountRole === 'owner' ? 'Solaris Owner' : (PRIMARY_ROLE_LABELS[user.primaryRole] || 'Member');
-    const profileOptions = isOwn ? `<div class="profile-options-wrap"><button class="profile-options-button" type="button" data-profile-options aria-label="Profile options" aria-expanded="false" aria-controls="profile-options">⋮</button><div class="profile-options-menu" id="profile-options" hidden><button type="button" data-edit-account>Edit Profile</button></div></div>` : '';
+    const canEditFriendCard = user.accountRole !== 'owner' && user.primaryRole === 'member';
+    const profileOptions = isOwn ? `<div class="profile-options-wrap"><button class="profile-options-button" type="button" data-profile-options aria-label="Profile options" aria-expanded="false" aria-controls="profile-options">⋮</button><div class="profile-options-menu" id="profile-options" hidden><button type="button" data-edit-account>Edit Profile</button><button type="button" data-view-personal-info>View Personal Profile Information</button>${canEditFriendCard ? '<button type="button" data-edit-friend-card>Edit Custom friend card</button>' : ''}</div></div>` : '';
     const admin = isOwn && user.accountRole === 'owner' ? ownerTeamManager() : '';
     const viewedRoleManager = !isOwn ? viewedUserRoleManager(user) : '';
     const roleKey = user.accountRole === 'owner' ? 'owner' : user.primaryRole;
     const profileRoles = ['owner','assistant','ai-assistant','developer'].includes(roleKey) ? `<section class="account-panel account-panel-wide profile-roles-panel"><h2>Roles</h2><div class="member-tags"><span class="tag member-tag">${roleKey === 'owner' ? 'Owner' : esc(PRIMARY_ROLE_LABELS[roleKey])}</span>${(user.secondaryRoles || []).map(tag => `<span class="tag member-tag">${esc(tag)}</span>`).join('')}</div><p>${esc(PRIMARY_ROLE_EXPLANATIONS[roleKey])}</p></section>` : '';
     const ownerClaim = isOwn && user.canClaimOwner ? `<section class="account-panel account-panel-wide owner-claim-panel"><span class="section-eyebrow">STUDIO SETUP</span><h2>Claim the Solaris Owner role</h2><p>Your signed-in username is reserved for the Owner account. Enter the one-time setup code configured on the Solaris server to manage registered account roles.</p><form id="owner-claim-form"><label>Owner setup code<input name="ownerSetupCode" type="password" maxlength="200" autocomplete="off" required></label><p class="form-message" id="owner-claim-message" role="status"></p><button class="btn btn-primary" type="submit">Claim Owner role</button></form></section>` : '';
     const security = isOwn ? accountSecurityPanel(user) : '';
+    const ownFriendCard = isOwn && canEditFriendCard ? `<section class="account-panel account-panel-wide own-friend-card-panel"><div class="panel-heading"><div><h2>Your Custom Friend-Card</h2><p>This is your card preview. Open it to check the full layout and uploaded assets.</p></div><button class="btn btn-ghost btn-sm" type="button" data-edit-friend-card>Edit Friend-Card</button></div><div class="own-friend-card-preview">${friendCardMarkup(user,false,false,'own')}</div></section>` : '';
     return `<div class="wrap account-wrap">
       <section class="account-hero"><div class="account-banner ${bannerRatioClass(user.bannerRatio)}">${bannerImage(user.bannerImage)}</div>
         ${profileOptions}<div class="account-hero-row">${avatar(user.username,'avatar-large',user.avatarImage)}${noteControl(user.notes,'note-control-full')}<div class="account-hero-name"><h2>${esc(user.username)}</h2><p>${user.realName ? esc(user.realName) : 'Real name not shared'}${user.pronouns ? ` <span class="account-pronouns">· ${esc(user.pronouns)}</span>` : ''}</p><span class="profile-role-chip">${esc(roleLabel)}</span></div></div></section>
@@ -612,14 +696,22 @@
         <section class="account-panel"><h2>Likes</h2><p>${esc(user.likes || 'No likes added yet.')}</p></section>
         <section class="account-panel"><h2>Dislikes</h2><p>${esc(user.dislikes || 'No dislikes added yet.')}</p></section>
         <section class="account-panel account-panel-wide"><h2>Favorites</h2>${favoriteCards.length ? `<div class="favorite-grid">${favoriteCards.join('')}</div>` : '<p class="empty-inline">No favorites added yet. Edit your profile to choose favorites.</p>'}</section>
-        <section class="account-panel account-panel-wide"><h2>Installed games</h2><div class="tag-list">${installed}</div></section>${profileRoles}${security}${admin}${viewedRoleManager}${ownerClaim}
+        <section class="account-panel account-panel-wide"><h2>Installed games</h2><div class="tag-list">${installed}</div></section>${ownFriendCard}${profileRoles}${security}${admin}${viewedRoleManager}${ownerClaim}
       </div>${isOwn ? `<p class="account-footnote">Your profile is saved by the Solaris server. Real name and profile details are optional.</p>${dangerZone()}${dangerDialog()}` : ''}</div>`;
+  }
+  function personalInfoPage(user) {
+    const email = user.authEmail || '';
+    const verification = email ? (user.emailVerified ? 'Verified' : 'Not verified') : 'No email connected';
+    const passwordRecovery = firebaseEnabled && email ? `<button class="btn btn-ghost btn-sm" type="button" data-password-reset data-reset-email="${esc(email)}">Send password reset email</button>` : '<p class="panel-help">Password recovery is available after Firebase email sign-in is connected.</p>';
+    return `<div class="wrap account-wrap personal-info-page"><div class="page-head"><h1>Personal Profile Information</h1><p>Private account details are visible only to you.</p></div><div class="account-grid"><section class="account-panel account-panel-wide personal-info-security"><div><span class="section-eyebrow">SIGN-IN DETAILS</span><h2>Email and password</h2></div><dl class="profile-facts"><dt>Email address</dt><dd>${esc(email || 'Not connected')}</dd><dt>Email status</dt><dd>${verification}</dd><dt>Password</dt><dd><span class="password-masked" aria-label="Password hidden">••••••••••••</span><small>Passwords are stored as secure one-way hashes, so they cannot be viewed or revealed with a code.</small></dd><dt>Account ID</dt><dd>${esc(user.id || 'Unavailable')}</dd><dt>Solaris role</dt><dd>${esc(user.accountRole === 'owner' ? 'Owner' : (PRIMARY_ROLE_LABELS[user.primaryRole] || 'Member'))}</dd></dl>${passwordRecovery}<p class="form-message" data-security-message role="status"></p></section><form id="personal-info-form" class="account-panel account-panel-wide"><span class="section-eyebrow">PRIVATE CONTACT DETAILS</span><h2>Phone and secondary email</h2><p class="panel-help">These details stay private and are never shown on your public profile.</p><label>Phone number <span class="optional">optional</span><input name="phoneNumber" type="tel" maxlength="40" autocomplete="tel" value="${esc(user.personalInfo?.phoneNumber || '')}" placeholder="Add a phone number"></label><label>Secondary email <span class="optional">optional</span><input name="secondaryEmail" type="email" maxlength="254" autocomplete="email" value="${esc(user.personalInfo?.secondaryEmail || '')}" placeholder="Add a recovery or contact email"></label><p class="form-message" id="personal-info-message" role="status"></p><div class="actions"><button class="btn btn-primary" type="submit">Save personal information</button><button class="btn btn-ghost" type="button" data-cancel-edit>Back to profile</button></div></form></div></div>`;
+  }
+  function friendCardEditorPage(user) {
+    return `<div class="wrap account-wrap"><div class="page-head"><h1>Custom Friend-Card</h1><p>Shape your card and style its background, strokes, button, and text.</p></div>${friendCardEditorSection(user)}</div>`;
   }
   function profileEditor(user) {
     const socials = socialRowsMarkup(user.socials);
     const favs = favoritesFor(user);
     const ticketCounts = user.tickets || { namecard: 0, who: 0 };
-    const memberFriendCard = friendCardEditorSection(user);
     const namecardOption = ticketCounts.namecard > 0 ? `<label class="ticket-choice"><input type="checkbox" name="useNamecardTicket"><span>Use a Namecard ticket (${ticketCounts.namecard} available)</span></label>` : `<p class="panel-help">Namecard tickets in your inventory: ${ticketCounts.namecard || 0}. <a class="text-link" href="shop.html">Get one in the Shop</a>.</p>`;
     const realNameNotice = user.realName ? (ticketCounts.who > 0 ? `<p class="panel-help">Your saved real name is permanent unless you use a WHO? ticket (${ticketCounts.who} available).</p><label class="ticket-choice"><input type="checkbox" name="useWhoTicket"><span>Use a WHO? ticket for this change</span></label>` : `<p class="panel-help">Your saved real name is permanent. <a class="text-link" href="shop.html">Get a WHO? ticket in the Shop</a> if you need to change it.</p>`) : '<p class="real-name-warning">Warning: the first real name you save becomes permanent. To change it later, you will need a WHO? ticket from the Shop.</p>';
     return `<div class="wrap account-wrap"><div class="page-head"><h1>Edit profile</h1><p>Choose what to share on your Solaris profile. Only your username is required for your account.</p></div>
@@ -637,7 +729,6 @@
           <section class="account-panel account-panel-wide"><h2>Favorites</h2><p class="panel-help">Add an optional comment to each favorite.</p><div class="favorite-editor-grid">
             <div class="favorite-editor-item">${favoriteControl('game',favs.game)}</div><div class="favorite-editor-item">${favoriteControl('developer',favs.developer)}</div><div class="favorite-editor-item">${favoriteControl('artwork',favs.artwork)}</div></div></section>
           <section class="account-panel account-panel-wide"><h2>Installed games</h2><p class="panel-help">List the Solaris games you have installed, separated by commas. You can leave this blank.</p><label class="visually-hidden" for="installed-games">Installed Solaris games</label><input id="installed-games" name="installedGames" maxlength="500" value="${esc((user.installedGames || []).join(', '))}" placeholder="e.g. Gamma Frost"></section>
-          ${memberFriendCard}
         </div><p class="form-message" id="profile-message" role="status"></p><div class="actions editor-actions"><button class="btn btn-primary" type="submit">Save profile</button><button class="btn btn-ghost" type="button" data-cancel-edit>Cancel</button></div>
       </form></div>`;
   }
@@ -649,7 +740,7 @@
       <section class="auth-card"><div class="auth-tabs" role="tablist" aria-label="Account access"><button type="button" role="tab" data-auth-mode="signup" aria-selected="${signupSelected}">Sign up</button><button type="button" role="tab" data-auth-mode="login" aria-selected="${!signupSelected}">Log in</button></div>
       <p class="form-message" id="auth-message" role="status">${esc(error)}</p>
       <form id="signup-form" class="form auth-form"${signupSelected ? '' : ' hidden'}><h2>Create your account</h2>${firebaseReady ? emailField : ''}<label>Username<input name="username" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_.-]+( [A-Za-z0-9_.-]+)*" autocomplete="username" placeholder="3–24 characters; spaces allowed"></label>
-      <label>Password<input name="password" type="password" required minlength="10" maxlength="200" autocomplete="new-password" placeholder="At least 10 characters"></label><label>Confirm password<input name="confirmPassword" type="password" required minlength="10" maxlength="200" autocomplete="new-password"></label><details class="owner-setup"><summary>Studio owner setup</summary><label>Owner setup code<input name="ownerSetupCode" type="password" maxlength="200" autocomplete="off"></label><small>Only the reserved studio owner should use this server setup code.</small></details><button class="btn btn-primary" type="submit">Create account</button></form>
+      <label>Password<input name="password" type="password" required minlength="10" maxlength="200" autocomplete="new-password" placeholder="At least 10 characters"></label><label>Confirm password<input name="confirmPassword" type="password" required minlength="10" maxlength="200" autocomplete="new-password"></label><button class="btn btn-primary" type="submit">Create account</button></form>
       <form id="login-form" class="form auth-form"${!signupSelected ? '' : ' hidden'}><h2>Welcome back</h2>${firebaseReady ? emailField : '<label>Username<input name="username" required maxlength="24" autocomplete="username"></label>'}<label>Password<input name="password" type="password" required maxlength="200" autocomplete="current-password"></label>${firebaseReady ? '<button class="text-link auth-reset-link" type="button" data-reset-auth>Password forgotten? Send a reset email</button>' : ''}<button class="btn btn-primary" type="submit">Log in</button>${firebaseReady ? '<button class="btn btn-ghost guest-entry" type="button" data-legacy-login-toggle>Use an older Solaris username account</button>' : ''}</form>
       ${firebaseReady ? '<div id="legacy-login-panel" hidden><form id="legacy-login-form" class="form auth-form"><h2>Older Solaris account</h2><label>Username<input name="username" required maxlength="24" autocomplete="username"></label><label>Password<input name="password" type="password" required maxlength="200" autocomplete="current-password"></label><button class="btn btn-primary" type="submit">Log in to existing account</button><button class="btn btn-ghost guest-entry" type="button" data-legacy-login-toggle>Back to email sign-in</button></form></div>' : ''}
       ${signupSelected ? '<button class="btn btn-ghost guest-entry" type="button" data-view-guest>View site as guest</button>' : ''}
@@ -668,8 +759,8 @@
       if (isGuest && !params.has('mode')) app.innerHTML = guestDashboard();
       else app.innerHTML = authView(mode === 'login' ? 'login' : 'signup');
     } else {
-      app.innerHTML = editingProfile ? profileEditor(currentUser) : profileDashboard(currentUser,true);
-      if (!editingProfile && currentUser.accountRole === 'owner') loadOwnerAccounts();
+      app.innerHTML = editingFriendCard ? friendCardEditorPage(currentUser) : viewingPersonalInfo ? personalInfoPage(currentUser) : editingProfile ? profileEditor(currentUser) : profileDashboard(currentUser,true);
+      if (!editingProfile && !editingFriendCard && !viewingPersonalInfo && currentUser.accountRole === 'owner') loadOwnerAccounts();
     }
   }
   function setMessage(id, message, isError = true) {
@@ -704,8 +795,7 @@
       if (title) favorites[type] = {title,comment:get(`favorite-${type}-comment`)};
     }
     const installedGames = get('installedGames').split(',').map(item => item.trim()).filter(Boolean);
-    const friendCard = friendCardFromForm(form);
-    return {username:get('username'),realName:get('realName'),pronouns:get('pronouns'),bio:get('bio'),notes:get('notes'),avatarImage:get('avatarImage'),bannerImage:get('bannerImage'),bannerRatio:get('bannerRatio'),likes:get('likes'),dislikes:get('dislikes'),socials,favorites,installedGames,friendCard,useNamecardTicket:form.elements.useNamecardTicket?.checked === true,useWhoTicket:form.elements.useWhoTicket?.checked === true};
+    return {username:get('username'),realName:get('realName'),pronouns:get('pronouns'),bio:get('bio'),notes:get('notes'),avatarImage:get('avatarImage'),bannerImage:get('bannerImage'),bannerRatio:get('bannerRatio'),likes:get('likes'),dislikes:get('dislikes'),socials,favorites,installedGames,useNamecardTicket:form.elements.useNamecardTicket?.checked === true,useWhoTicket:form.elements.useWhoTicket?.checked === true};
   }
   function ensureCropDialog() {
     if (cropDialog) return cropDialog;
@@ -835,7 +925,7 @@
     try {
       await api('/api/logout','POST',{});
       if (firebaseEnabled) { try { const client = await getFirebaseClient(); await client.sdk.signOut(client.auth); } catch (_) {} }
-      currentUser = null; leaveGuestMode(); editingProfile = false; closeProfile(); profilePreview(); if (page === 'account') showAccount(); toast('You are logged out.');
+      currentUser = null; leaveGuestMode(); editingProfile = false; editingFriendCard = false; viewingPersonalInfo = false; closeProfile(); profilePreview(); if (page === 'account') showAccount(); toast('You are logged out.');
     }
     catch (error) { toast(error.message); }
   }
@@ -878,13 +968,16 @@
     const saveRoles = event.target.closest('[data-save-account-roles]');
     const saveViewedRoles = event.target.closest('[data-save-viewed-user-roles]');
     const postFriendCard = event.target.closest('[data-post-friend-card]');
+    const saveFriendCard = event.target.closest('[data-save-friend-card]');
     const addSocial = event.target.closest('[data-add-social]');
     const removeSocial = event.target.closest('[data-remove-social]');
     const openFriendCard = event.target.closest('[data-open-friend-card]');
+    const openOwnFriendCard = event.target.closest('[data-open-own-friend-card]');
     const closeFriendCard = event.target.closest('[data-close-friend-card]');
     const copyMemberLink = event.target.closest('[data-copy-member-link]');
     const chooseFriendCardImage = event.target.closest('[data-choose-friend-card-image]');
     const removeFriendCardImage = event.target.closest('[data-remove-friend-card-image]');
+    const exportStk = event.target.closest('[data-export-stk]');
     const profileOptions = event.target.closest('[data-profile-options]');
     const accountAction = event.target.closest('[data-account-action]');
     const cancelDanger = event.target.closest('[data-cancel-danger]');
@@ -912,33 +1005,17 @@
       root.setAttribute('data-theme',next); try { localStorage.setItem('solaris-theme',next); } catch (_) {} return;
     }
     if (profileButton) { closeGlobalSearch(); const popover = $('#profile-popover'); if (!popover.hidden) closeProfile(); else { popover.hidden = false; profileButton.setAttribute('aria-expanded','true'); } return; }
-    if (postFriendCard) {
-      const friendCard = friendCardFromForm($('#profile-form'));
-      if (!friendCard) return;
-      postFriendCard.disabled = true;
-      try {
-        const result = await api('/api/member-friend-card/post','POST',{friendCard});
-        currentUser = result.user;
-        profilePreview();
-        postFriendCard.textContent = 'Update posted Friend-Card';
-        const status = $('.friend-card-publish-row strong');
-        const description = $('.friend-card-publish-row p:not(.form-message)');
-        if (status) status.textContent = 'Your Friend-Card is posted.';
-        if (description) description.textContent = 'Save profile changes to update your posted card.';
-        setMessage('#friend-card-post-message',result.message,false);
-        await loadMemberProfiles();
-      } catch (error) { setMessage('#friend-card-post-message',error.message); }
-      finally { postFriendCard.disabled = false; }
+    if (saveFriendCard) {
+      await saveFriendCardChanges(false,saveFriendCard);
       return;
     }
+    if (postFriendCard) { await saveFriendCardChanges(true,postFriendCard); return; }
     if (openFriendCard) {
       const member = memberProfiles.find(item => item.id === openFriendCard.dataset.openFriendCard);
-      if (member) {
-        $('#friend-card-dialog-content').innerHTML = friendCardMarkup(member,true);
-        $('#friend-card-dialog').showModal();
-      }
+      if (member) openFriendCardDialog(member);
       return;
     }
+    if (openOwnFriendCard && currentUser) { openFriendCardDialog(currentUser); return; }
     if (closeFriendCard) { $('#friend-card-dialog')?.close(); return; }
     if (copyMemberLink) {
       const url = new URL(`account.html?user=${encodeURIComponent(copyMemberLink.dataset.copyMemberLink)}`,location.href).href;
@@ -946,16 +1023,24 @@
       catch (_) { window.prompt('Copy this profile link:',url); }
       return;
     }
-    if (chooseFriendCardImage) { $('[data-friend-card-image]')?.click(); return; }
+    if (chooseFriendCardImage) {
+      const field = chooseFriendCardImage.dataset.chooseFriendCardImage;
+      $$('[data-friend-card-image]').find(input => input.dataset.friendCardImage === field)?.click();
+      return;
+    }
     if (removeFriendCardImage) {
-      const form = $('#profile-form');
-      if (form?.elements.friendCardBackgroundImage) form.elements.friendCardBackgroundImage.value = '';
-      const thumb = $('#friend-card-image-thumb');
+      const field = removeFriendCardImage.dataset.removeFriendCardImage;
+      const form = $('#friend-card-form');
+      if (form?.elements[field]) form.elements[field].value = '';
+      const row = removeFriendCardImage.closest('[data-friend-card-asset-row]');
+      const thumb = $('[data-friend-card-thumb]',row);
       if (thumb) { thumb.className = 'friend-card-image-thumb friend-card-image-empty'; thumb.style.backgroundImage = ''; thumb.textContent = 'No image selected'; }
       removeFriendCardImage.hidden = true;
+      $('[data-export-stk]',row)?.setAttribute('disabled','');
       updateFriendCardEditorPreview();
       return;
     }
+    if (exportStk) { exportFriendCardStk(exportStk.dataset.exportStk); return; }
     const noteToggle = event.target.closest('[data-note-toggle]');
     if (noteToggle) {
       const bubble = noteToggle.nextElementSibling;
@@ -1025,8 +1110,10 @@
       const options = $('#profile-options');
       if (options) { options.hidden = true; $('.profile-options-button')?.setAttribute('aria-expanded','false'); }
     }
-    if (event.target.closest('[data-edit-account]')) { editingProfile = true; showAccount(); return; }
-    if (event.target.closest('[data-cancel-edit]')) { editingProfile = false; showAccount(); return; }
+    if (event.target.closest('[data-edit-account]')) { editingProfile = true; editingFriendCard = false; viewingPersonalInfo = false; showAccount(); return; }
+    if (event.target.closest('[data-view-personal-info]')) { editingProfile = false; editingFriendCard = false; viewingPersonalInfo = true; showAccount(); return; }
+    if (event.target.closest('[data-edit-friend-card]')) { editingProfile = false; viewingPersonalInfo = false; editingFriendCard = true; showAccount(); return; }
+    if (event.target.closest('[data-cancel-edit]')) { editingProfile = false; editingFriendCard = false; viewingPersonalInfo = false; showAccount(); return; }
     if (!event.target.closest('.profile-wrap')) closeProfile();
     if (!event.target.closest('.global-search')) closeGlobalSearch();
     if (!event.target.closest('.top')) { const nav = $('#nav'); nav.classList.remove('open'); $('[data-menu]').setAttribute('aria-expanded','false'); }
@@ -1057,10 +1144,10 @@
             setMessage('#auth-message','Check your email and verify your address. This page can finish creating your Solaris account after you return.',false);
             return;
           }
-          await finishFirebaseSignup({...pending,ownerSetupCode:data.get('ownerSetupCode')},password);
+          await finishFirebaseSignup(pending,password);
           return;
         }
-        const result = await api('/api/signup','POST',{username:data.get('username'),ownerSetupCode:data.get('ownerSetupCode'),password,profile:{}});
+        const result = await api('/api/signup','POST',{username:data.get('username'),password,profile:{}});
         currentUser = result.user; leaveGuestMode(); editingProfile = false; profilePreview(); showAccount(); toast(result.message);
       } catch (error) { setMessage('#auth-message',error.message); }
       finally { submit.disabled = false; }
@@ -1117,6 +1204,17 @@
       try { const result = await api('/api/profile','PUT',accountFromForm(form)); currentUser = result.user; editingProfile = false; profilePreview(); showAccount(); toast('Your profile has been saved.'); }
       catch (error) { setMessage('#profile-message',error.message); }
       finally { submit.disabled = false; }
+    } else if (event.target.id === 'personal-info-form') {
+      event.preventDefault();
+      const form = event.target, submit = $('button[type="submit"]',form);
+      submit.disabled = true;
+      try {
+        const result = await api('/api/personal-info','PUT',{phoneNumber:form.elements.phoneNumber.value,secondaryEmail:form.elements.secondaryEmail.value});
+        currentUser = result.user;
+        setMessage('#personal-info-message',result.message,false);
+        toast(result.message);
+      } catch (error) { setMessage('#personal-info-message',error.message); }
+      finally { submit.disabled = false; }
     } else if (event.target.id === 'account-danger-form') {
       event.preventDefault();
       const form = event.target, data = new FormData(form), submit = $('#account-danger-submit');
@@ -1136,7 +1234,7 @@
         const result = await api(endpoint,'POST',{password,confirmation:data.get('confirmation'),...authProof});
         $('#account-danger-dialog').close();
         if (firebaseEnabled) { try { const client = await getFirebaseClient(); await client.sdk.signOut(client.auth); } catch (_) {} }
-        currentUser = null; editingProfile = false; profilePreview();
+        currentUser = null; editingProfile = false; editingFriendCard = false; viewingPersonalInfo = false; profilePreview();
         history.replaceState({},'',`${location.pathname}?mode=login`);
         app.innerHTML = authView('login',result.message);
         setMessage('#auth-message',result.message,false);
@@ -1164,20 +1262,25 @@
       return;
     }
     if (event.target.closest('#profile-form') && event.target.name?.startsWith('friendCard')) { updateFriendCardEditorPreview(); return; }
+    if (event.target.closest('#friend-card-form') && event.target.name?.startsWith('friendCard')) { updateFriendCardEditorPreview(); return; }
     const friendImage = event.target.closest('[data-friend-card-image]');
     if (friendImage && currentUser) {
       const file = friendImage.files?.[0];
+      const field = friendImage.dataset.friendCardImage;
       friendImage.value = '';
       if (!file) return;
       try {
-        const data = await compressFriendCardImage(file);
-        const form = $('#profile-form');
-        form.elements.friendCardBackgroundImage.value = data;
-        const thumb = $('#friend-card-image-thumb');
+        const data = await readFriendCardAsset(file);
+        const form = $('#friend-card-form');
+        form.elements[field].value = data;
+        const row = friendImage.closest('[data-friend-card-asset-row]');
+        const thumb = $('[data-friend-card-thumb]',row);
         if (thumb) { thumb.className = 'friend-card-image-thumb'; thumb.style.backgroundImage = `url("${data}")`; thumb.textContent = ''; }
-        $('[data-remove-friend-card-image]').hidden = false;
+        $('[data-remove-friend-card-image]',row).hidden = false;
+        const exportButton = $('[data-export-stk]',row);
+        if (exportButton) exportButton.disabled = false;
         updateFriendCardEditorPreview();
-      } catch (error) { toast(error.message); }
+      } catch (error) { toast(file.name.toLowerCase().endsWith('.stk') ? 'That .stk file is not valid. Use a Solaris Friend-Card stroke export.' : error.message); }
       return;
     }
     const input = event.target.closest('[data-image-input]');
@@ -1201,6 +1304,7 @@
       return;
     }
     if (event.target.closest('#profile-form') && event.target.name?.startsWith('friendCard')) { updateFriendCardEditorPreview(); return; }
+    if (event.target.closest('#friend-card-form') && event.target.name?.startsWith('friendCard')) { updateFriendCardEditorPreview(); return; }
     if (event.target.matches('[data-project-search]')) {
       const query = event.target.value.trim().toLowerCase();
       let shown = 0;
@@ -1229,5 +1333,4 @@
     if (options) { options.hidden = true; $('.profile-options-button')?.setAttribute('aria-expanded','false'); }
   });
   $('#dlg').addEventListener('click', event => { if (event.target === $('#dlg')) $('#dlg').close(); });
-  $('#friend-card-dialog')?.addEventListener('click', event => { if (event.target === $('#friend-card-dialog')) $('#friend-card-dialog').close(); });
 })();
