@@ -681,8 +681,27 @@ dialog::backdrop{background:var(--backdrop)}
 
 /* Member Friend-Cards */
 .friend-directory{margin:0 0 1.4rem}
-.friend-card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,285px),1fr));gap:1rem;align-items:stretch}
+.friend-card-grid{column-count:4;column-gap:1rem;column-fill:balance;max-width:1120px;margin-inline:auto}
+.friend-card-grid>.friend-card{display:flex;width:100%;margin:0 0 1rem;break-inside:avoid;vertical-align:top}
 .friend-card{--friend-bg:#fff8e9;--friend-stroke:#dcae55;--friend-stroke-style:solid;--friend-stroke-width:2px;position:relative;display:flex;flex-direction:column;gap:clamp(.55rem,2vw,1rem);width:100%;min-width:0;min-height:0;aspect-ratio:var(--friend-ratio,1 / 1);overflow:hidden;padding:clamp(.7rem,3vw,1.25rem);border:var(--friend-stroke-width) var(--friend-stroke-style) var(--friend-stroke);border-radius:22px;background-color:var(--friend-bg);background-position:center;background-size:cover;color:var(--friend-text-color,var(--ink));box-shadow:0 14px 35px color-mix(in srgb,var(--ink) 9%,transparent);transition:transform .2s ease,box-shadow .2s ease}
+.friend-card-grid .friend-card{gap:.5rem;padding:.75rem}
+.friend-card-grid .friend-card-avatar{flex-basis:2.7rem;width:2.7rem;height:2.7rem}
+.friend-card-grid .friend-card-teaser{min-height:0;font-size:.84rem;line-height:1.4;-webkit-line-clamp:2}
+.friend-card-grid .friend-card-favorite{gap:.12rem;padding:.42rem .55rem}
+.friend-card-grid .friend-personality-list{max-height:3.5rem;overflow:hidden}
+.friend-card-grid .friend-personality-tag,.friend-card-grid .friend-personality-more{min-height:1.55rem;padding:.2rem .48rem;font-size:.7rem}
+.friend-card-grid .friend-card-open{min-height:2.25rem;padding:.45rem .7rem}
+.friend-card-grid .friend-card[data-friend-aspect="3:2"],.friend-card-grid .friend-card[data-friend-aspect="5:4"]{gap:.35rem;padding:.62rem}
+.friend-card-grid .friend-card[data-friend-aspect="3:2"] .friend-card-avatar,.friend-card-grid .friend-card[data-friend-aspect="5:4"] .friend-card-avatar{flex-basis:2.25rem;width:2.25rem;height:2.25rem}
+.friend-card-grid .friend-card[data-friend-aspect="3:2"] .friend-card-name h2,.friend-card-grid .friend-card[data-friend-aspect="5:4"] .friend-card-name h2{font-size:.9rem}
+.friend-card-grid .friend-card[data-friend-aspect="3:2"] .friend-card-favorite,.friend-card-grid .friend-card[data-friend-aspect="5:4"] .friend-card-favorite{grid-template-columns:auto minmax(0,1fr);align-items:center;gap:.3rem;padding:.22rem .4rem}
+.friend-card-grid .friend-card[data-friend-aspect="3:2"] .friend-card-favorite span,.friend-card-grid .friend-card[data-friend-aspect="5:4"] .friend-card-favorite span{font-size:.56rem;white-space:nowrap}
+.friend-card-grid .friend-card[data-friend-aspect="3:2"] .friend-card-favorite strong,.friend-card-grid .friend-card[data-friend-aspect="5:4"] .friend-card-favorite strong{overflow:hidden;font-size:.72rem;text-overflow:ellipsis;white-space:nowrap}
+.friend-card-grid .friend-card[data-friend-aspect="3:2"] .friend-card-teaser{-webkit-line-clamp:1}
+.friend-card-grid .friend-card[data-friend-aspect="3:2"] .friend-personality-list,.friend-card-grid .friend-card[data-friend-aspect="5:4"] .friend-personality-list{max-height:1.7rem}
+.friend-card-grid .friend-card[data-friend-aspect="3:2"] .friend-card-open,.friend-card-grid .friend-card[data-friend-aspect="5:4"] .friend-card-open{min-height:2rem;padding:.35rem .55rem;font-size:.78rem}
+@media(max-width:900px){.friend-card-grid{column-count:3}}
+@media(max-width:640px){.friend-card-grid{column-count:2;column-gap:.7rem}.friend-card-grid>.friend-card{margin-bottom:.7rem}.friend-card-grid .friend-card[data-friend-aspect="3:2"] .friend-card-favorite,.friend-card-grid .friend-card[data-friend-aspect="5:4"] .friend-card-favorite{display:none}}
 .friend-card-top{display:flex;align-items:center;gap:.85rem;min-width:0}
 .friend-card-avatar{flex:0 0 3.6rem;width:3.6rem;height:3.6rem;border:2px solid color-mix(in srgb,var(--friend-stroke) 62%,white);font-size:1rem}
 .friend-card-name{min-width:0;flex:1}
