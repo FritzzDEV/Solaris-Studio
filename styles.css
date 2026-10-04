@@ -657,14 +657,25 @@ dialog::backdrop{background:var(--backdrop)}
 .shop-intro p+p{margin-top:.7rem}
 .shop-ticket-list{display:grid;gap:.9rem;max-width:850px}
 .shop-ticket-card{display:flex;align-items:center;gap:1rem;padding:1.2rem;border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:0 12px 30px color-mix(in srgb,var(--ink) 5%,transparent)}
-.shop-ticket-mark{display:grid;place-items:center;flex:0 0 3.4rem;width:3.4rem;height:3.4rem;border-radius:14px;background:color-mix(in srgb,var(--ember) 14%,var(--surface));color:var(--ember);font-size:1.55rem;font-weight:800}
+.shop-ticket-art{display:block;flex:0 0 6rem;width:6rem;height:6rem;object-fit:contain;filter:drop-shadow(0 8px 10px color-mix(in srgb,var(--ink) 15%,transparent))}
 .shop-ticket-copy{flex:1;min-width:0}
 .shop-ticket-copy .section-eyebrow{margin:0 0 .2rem;font-size:.62rem}
 .shop-ticket-copy h2{margin:0 0 .35rem;font:700 1.05rem var(--font-display)}
 .shop-ticket-copy p{margin:0;color:var(--muted);font-size:.9rem;line-height:1.5}
 .shop-ticket-count{display:block;margin-top:.45rem;color:var(--muted);font-size:.8rem}
 .shop-ticket-count strong{color:var(--ink)}
-@media(max-width:600px){.shop-ticket-card{align-items:flex-start;flex-wrap:wrap}.shop-ticket-card>.btn,.shop-ticket-card>a{width:100%;margin-left:0}}
+.account-security-panel{border-color:color-mix(in srgb,var(--ember) 35%,var(--line));background:linear-gradient(145deg,color-mix(in srgb,var(--ember) 5%,var(--surface)),var(--surface) 55%)}
+.account-security-panel h2{margin:.1rem 0 .5rem;font:700 1.2rem var(--font-display)}
+.account-security-panel>p{max-width:68ch;color:var(--muted);line-height:1.65}
+.account-security-panel .security-email{display:flex;flex-wrap:wrap;gap:.5rem .9rem;align-items:center}
+.account-security-panel .security-email strong{color:var(--ink)}
+.account-security-panel .security-email span{overflow-wrap:anywhere;color:var(--muted)}
+.security-link-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:end;gap:.8rem}
+.security-link-form .form-message,.security-link-form .btn{grid-column:1/-1}
+.security-link-form label{display:grid;gap:.4rem;color:var(--muted);font-size:.86rem}
+.security-link-form input{width:100%;min-height:2.7rem;padding:.65rem .75rem;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit}
+.auth-reset-link{justify-self:start;padding:0;border:0;background:none;color:var(--ember);font:inherit;text-align:left;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+@media(max-width:600px){.shop-ticket-card{align-items:flex-start;flex-wrap:wrap}.shop-ticket-art{flex-basis:4.5rem;width:4.5rem;height:4.5rem}.shop-ticket-card>.btn,.shop-ticket-card>a{width:100%;margin-left:0}.security-link-form{grid-template-columns:1fr}}
 
 /* Member Friend-Cards */
 .friend-directory{margin:0 0 1.4rem}

@@ -36,6 +36,12 @@
   const titles = {home:'',list:'List',members:'Members',games:'Games',updates:'Updates',account:'Profile',arts:'Arts',groups:'Groups',download:'Download',shop:'Shop',project:'Project',artwork:'Artwork'};
   let currentUser = null;
   let memberProfiles = [];
+  let firebaseSetupKnown = false;
+  let firebaseEnabled = false;
+  let firebasePublicConfig = null;
+  let firebaseClientPromise = null;
+  let firebaseClient = null;
+  let firebaseSetupError = '';
   let isGuest = new URLSearchParams(location.search).get('guest') === '1';
   try {
     isGuest = isGuest || sessionStorage.getItem('solaris-guest') === '1';
@@ -297,7 +303,7 @@
     download() { const downloadAccess = currentUser ? '<p class="download-access-note">Downloads will be available to signed-in members when the first extras are ready.</p>' : '<div class="download-guest-gate"><p>Guests can browse this page, but downloads require a Solaris account. No downloads are available yet.</p><a class="btn btn-ghost btn-sm" href="account.html?mode=login">Log in to access downloads</a></div>'; return `<div class="wrap"><div class="page-head"><h1>Download</h1><p>Extras and add-ons for Solaris Studio games.</p></div><section class="download-intro"><span class="section-eyebrow">PLUGINS · MODS · EXTRAS</span><h2>Make each game your own</h2><p>This page is a home for extras created for Solaris Studio games: character skins, add-ons, mods, plugins, modding apps, and other useful tools. These creations can give players new ways to personalize a game, try new ideas, and build on the experience. Game builds themselves will be shared on their own project detail pages; this page is for the tools and community-made additions around them.</p><p>There are no downloads available yet. As our games and their tools grow, we’ll add each extra here with details about its game, version, and use. We welcome creativity while asking everyone to use modifications thoughtfully: local servers on your own computer are supported, and public-server use is welcome when the modification is appropriate and safe.</p><h3>Why we support game modification tools</h3><ul class="download-reasons"><li><strong>Personalize your characters.</strong> Use skins and visual add-ons to make a character feel like your own.</li><li><strong>Explore more ways to play.</strong> Mods, plugins, and add-ons can introduce new ideas, features, and experiences to Solaris games.</li><li><strong>Celebrate creativity and hard work.</strong> Modding apps give players a way to experiment, make things, and share the care they put into their creations.</li></ul>${downloadAccess}</section><div class="download-categories"><section class="download-category"><h2>Plugins &amp; tools</h2><p>No plugins or tools are available yet.</p></section><section class="download-category"><h2>Mods &amp; add-ons</h2><p>No mods or add-ons are available yet.</p></section></div><div class="project-download-links"><h2>Game pages</h2>${DATA.games.map(game => `<a class="text-link" href="project.html?id=${encodeURIComponent(game.id)}">${esc(game.name)} project details <span aria-hidden="true">↗</span></a>`).join('')}</div><div class="page-end"></div></div>`; },
     shop() {
       const inventory = currentUser?.tickets || { namecard: 0, who: 0 };
-      const ticketCard = (kind, title, summary, count) => `<article class="shop-ticket-card"><span class="shop-ticket-mark" aria-hidden="true">${kind === 'namecard' ? '✦' : '？'}</span><div class="shop-ticket-copy"><span class="section-eyebrow">PROFILE TICKET</span><h2>${title}</h2><p>${summary}</p><span class="shop-ticket-count">${currentUser ? `In your inventory: <strong>${count}</strong>` : 'Sign in to view your inventory.'}</span></div>${currentUser ? `<button class="btn btn-primary" type="button" data-shop-ticket="${kind}">Get for free</button>` : '<a class="btn btn-primary" href="account.html?mode=signup">Sign up or log in</a>'}</article>`;
+      const ticketCard = (kind, title, summary, count) => `<article class="shop-ticket-card"><img class="shop-ticket-art" src="assets/${kind === 'namecard' ? 'namecard-ticket' : 'who-ticket'}.png" alt="${title} artwork"><div class="shop-ticket-copy"><span class="section-eyebrow">PROFILE TICKET</span><h2>${title}</h2><p>${summary}</p><span class="shop-ticket-count">${currentUser ? `In your inventory: <strong>${count}</strong>` : 'Sign in to view your inventory.'}</span></div>${currentUser ? `<button class="btn btn-primary" type="button" data-shop-ticket="${kind}">Get for free</button>` : '<a class="btn btn-primary" href="account.html?mode=signup">Sign up or log in</a>'}</article>`;
       return `<div class="wrap"><div class="page-head"><h1>Shop</h1><p>Get profile tickets for the changes you want to make.</p></div><section class="shop-intro"><span class="section-eyebrow">SOLARIS MEMBER SHOP</span><h2>Useful tickets, no currency needed</h2><p>The shop is new, so tickets are free while Solaris has no currency system. Add a ticket to your account here, then use it when editing your profile. Namecard tickets let you change your username during its one-week cooldown. A WHO? ticket lets you change the real name you made permanent when you first added it.</p><p>Tickets are saved to your account. You can keep up to 99 of each ticket.</p></section><div class="shop-ticket-list">${ticketCard('namecard','Namecard ticket','Change your username without waiting for the seven-day cooldown.',inventory.namecard || 0)}${ticketCard('who','WHO? ticket','Change a real name after the first saved value made it permanent.',inventory.who || 0)}</div><div class="page-end"></div></div>`;
     },
     project() {
@@ -370,6 +376,102 @@
     try { result = await response.json(); } catch (_) {}
     if (!response.ok) throw new Error(result.error || 'The account request could not be completed.');
     return result;
+  }
+  async function loadFirebaseSettings() {
+    try {
+      const setup = await api('/api/firebase-config');
+      firebaseSetupKnown = true;
+      firebaseEnabled = setup.enabled === true;
+      firebasePublicConfig = setup.config || null;
+      return true;
+    } catch (error) {
+      firebaseSetupKnown = true;
+      if (!firebasePublicConfig) firebaseEnabled = false;
+      firebaseSetupError = error.message;
+      return false;
+    }
+  }
+  async function getFirebaseClient() {
+    if (!firebaseEnabled || !firebasePublicConfig) throw new Error(firebaseSetupError || 'Firebase Authentication is not configured yet.');
+    if (firebaseClient) return firebaseClient;
+    if (!firebaseClientPromise) firebaseClientPromise = (async () => {
+      const version = '12.19.0';
+      const [appSdk, authSdk] = await Promise.all([
+        import(`https://www.gstatic.com/firebasejs/${version}/firebase-app.js`),
+        import(`https://www.gstatic.com/firebasejs/${version}/firebase-auth.js`)
+      ]);
+      const firebaseApp = appSdk.getApps().find(item => item.name === 'solaris-site') || appSdk.initializeApp(firebasePublicConfig, 'solaris-site');
+      const auth = authSdk.getAuth(firebaseApp);
+      await new Promise(resolve => {
+        let unsubscribe = null;
+        unsubscribe = authSdk.onAuthStateChanged(auth, () => { unsubscribe?.(); resolve(); });
+      });
+      firebaseClient = { app: firebaseApp, auth, sdk: authSdk };
+      return firebaseClient;
+    })().catch(error => {
+      firebaseClientPromise = null;
+      firebaseSetupError = `Firebase could not load: ${error.message}`;
+      throw new Error(firebaseSetupError);
+    });
+    return firebaseClientPromise;
+  }
+  function readPendingSignup() {
+    try { return JSON.parse(localStorage.getItem('solaris-pending-signup') || 'null'); } catch (_) { return null; }
+  }
+  async function finishFirebaseSignup(metadata, password = '') {
+    const client = await getFirebaseClient();
+    const user = client.auth.currentUser;
+    if (!user || !user.emailVerified) throw new Error('Verify your email before finishing account setup.');
+    const result = await api('/api/signup','POST',{
+      username:metadata.username,
+      ownerSetupCode:metadata.ownerSetupCode || '',
+      password,
+      idToken:await user.getIdToken(true),
+      profile:{}
+    });
+    try { localStorage.removeItem('solaris-pending-signup'); } catch (_) {}
+    currentUser = result.user;
+    leaveGuestMode();
+    editingProfile = false;
+    profilePreview();
+    if (page === 'account') showAccount();
+    else renderPage();
+    toast(result.message || 'Your verified Solaris account is ready.');
+  }
+  async function resumePendingFirebaseSignup() {
+    if (!firebaseEnabled || currentUser) return;
+    const pending = readPendingSignup();
+    if (!pending?.username) return;
+    const client = await getFirebaseClient();
+    const user = client.auth.currentUser;
+    if (!user || (pending.email && user.email?.toLowerCase() !== pending.email.toLowerCase())) return;
+    await user.reload();
+    if (!user.emailVerified) return;
+    try { await finishFirebaseSignup(pending); }
+    catch (error) {
+      if (page === 'account') { app.innerHTML = authView('signup',error.message); const form = $('#signup-form'); if (form) { form.elements.username.value = pending.username; form.elements.email.value = user.email || ''; } }
+    }
+  }
+  async function finishFirebaseLogin(user, password) {
+    await user.reload();
+    if (!user.emailVerified) {
+      try { await firebaseClient.sdk.sendEmailVerification(user,{url:`${location.origin}/account.html?mode=login`}); }
+      catch (error) { if (error.code !== 'auth/too-many-requests') throw error; }
+      throw new Error('Verify your email first. We sent another verification link if one was needed.');
+    }
+    const result = await api('/api/login','POST',{idToken:await user.getIdToken(true),password});
+    currentUser = result.user;
+    leaveGuestMode();
+    profilePreview();
+    showAccount();
+    toast(`Welcome back, ${currentUser.username}.`);
+  }
+  async function sendFirebasePasswordReset(email, target) {
+    if (!email) throw new Error('Enter your email address first.');
+    const client = await getFirebaseClient();
+    await client.sdk.sendPasswordResetEmail(client.auth,email,{url:`${location.origin}/account.html?mode=login`});
+    if (target) setMessage(target,'Password reset email sent. Check your inbox and spam folder.',false);
+    else setMessage('#auth-message','Password reset email sent. Check your inbox and spam folder.',false);
   }
   async function getShopTicket(button) {
     const ticketType = button.dataset.shopTicket;
@@ -478,6 +580,12 @@
   function dangerDialog() {
     return `<dialog class="account-danger-dialog" id="account-danger-dialog" aria-labelledby="account-danger-title"><div class="account-danger-dialog-inner"><button class="icon-btn danger-dialog-close" type="button" data-cancel-danger aria-label="Close confirmation">×</button><span class="danger-eyebrow">ACCOUNT MANAGEMENT</span><h2 id="account-danger-title">Confirm account action</h2><p id="account-danger-copy"></p><form id="account-danger-form"><label>Confirm your password<input name="password" type="password" required maxlength="200" autocomplete="current-password"></label><label>Type <strong id="account-danger-word"></strong> to confirm<input name="confirmation" required autocomplete="off"></label><p class="form-message" id="danger-action-message" role="status"></p><div class="danger-dialog-actions"><button class="btn btn-ghost" type="button" data-cancel-danger>Cancel</button><button class="btn btn-danger" id="account-danger-submit" type="submit">Confirm</button></div></form></div></dialog>`;
   }
+  function accountSecurityPanel(user) {
+    if (!firebaseSetupKnown) return '';
+    if (!firebaseEnabled) return `<section class="account-panel account-panel-wide account-security-panel"><span class="section-eyebrow">SIGN-IN &amp; RECOVERY</span><h2>Email security</h2><p>Firebase Authentication is not set up yet. Follow the Firebase and Render setup steps in the README to enable verified email sign-in and password recovery.</p></section>`;
+    if (user.emailVerified && user.authEmail) return `<section class="account-panel account-panel-wide account-security-panel"><span class="section-eyebrow">SIGN-IN &amp; RECOVERY</span><h2>Email security</h2><p class="security-email"><strong>Verified email</strong><span>${esc(user.authEmail)}</span></p><p>Firebase manages your sign-in password. Send yourself a password reset email whenever you need one.</p><button class="btn btn-ghost btn-sm" type="button" data-password-reset data-reset-email="${esc(user.authEmail)}">Send password reset email</button><p class="form-message" data-security-message role="status"></p></section>`;
+    return `<section class="account-panel account-panel-wide account-security-panel"><span class="section-eyebrow">SIGN-IN &amp; RECOVERY</span><h2>Connect a verified email</h2><p>Connect this Solaris profile to Firebase so you can verify your email and recover your password. This keeps your existing profile and username.</p><form id="link-email-form" class="security-link-form"><label>Email address<input name="email" type="email" required maxlength="254" autocomplete="email" value="${esc(user.authEmail || '')}"></label><label>Firebase password<input name="password" type="password" required minlength="10" maxlength="200" autocomplete="new-password" placeholder="At least 10 characters"></label><p class="form-message" id="link-email-message" role="status"></p><button class="btn btn-primary" type="submit">Connect email</button></form></section>`;
+  }
   function profileDashboard(user, isOwn = false) {
     const favorites = favoritesFor(user);
     const favoriteCards = [['game',favorites.game],['developer',favorites.developer],['artwork',favorites.artwork]].map(([type,item]) => favoriteCard(type,item)).filter(Boolean);
@@ -489,6 +597,7 @@
     const roleKey = user.accountRole === 'owner' ? 'owner' : user.primaryRole;
     const profileRoles = ['owner','assistant','ai-assistant','developer'].includes(roleKey) ? `<section class="account-panel account-panel-wide profile-roles-panel"><h2>Roles</h2><div class="member-tags"><span class="tag member-tag">${roleKey === 'owner' ? 'Owner' : esc(PRIMARY_ROLE_LABELS[roleKey])}</span>${(user.secondaryRoles || []).map(tag => `<span class="tag member-tag">${esc(tag)}</span>`).join('')}</div><p>${esc(PRIMARY_ROLE_EXPLANATIONS[roleKey])}</p></section>` : '';
     const ownerClaim = isOwn && user.canClaimOwner ? `<section class="account-panel account-panel-wide owner-claim-panel"><span class="section-eyebrow">STUDIO SETUP</span><h2>Claim the Solaris Owner role</h2><p>Your signed-in username is reserved for the Owner account. Enter the one-time setup code configured on the Solaris server to manage registered account roles.</p><form id="owner-claim-form"><label>Owner setup code<input name="ownerSetupCode" type="password" maxlength="200" autocomplete="off" required></label><p class="form-message" id="owner-claim-message" role="status"></p><button class="btn btn-primary" type="submit">Claim Owner role</button></form></section>` : '';
+    const security = isOwn ? accountSecurityPanel(user) : '';
     return `<div class="wrap account-wrap">
       <section class="account-hero"><div class="account-banner ${bannerRatioClass(user.bannerRatio)}">${bannerImage(user.bannerImage)}</div>
         ${profileOptions}<div class="account-hero-row">${avatar(user.username,'avatar-large',user.avatarImage)}${noteControl(user.notes,'note-control-full')}<div class="account-hero-name"><h2>${esc(user.username)}</h2><p>${user.realName ? esc(user.realName) : 'Real name not shared'}${user.pronouns ? ` <span class="account-pronouns">· ${esc(user.pronouns)}</span>` : ''}</p><span class="profile-role-chip">${esc(roleLabel)}</span></div></div></section>
@@ -498,7 +607,7 @@
         <section class="account-panel"><h2>Likes</h2><p>${esc(user.likes || 'No likes added yet.')}</p></section>
         <section class="account-panel"><h2>Dislikes</h2><p>${esc(user.dislikes || 'No dislikes added yet.')}</p></section>
         <section class="account-panel account-panel-wide"><h2>Favorites</h2>${favoriteCards.length ? `<div class="favorite-grid">${favoriteCards.join('')}</div>` : '<p class="empty-inline">No favorites added yet. Edit your profile to choose favorites.</p>'}</section>
-        <section class="account-panel account-panel-wide"><h2>Installed games</h2><div class="tag-list">${installed}</div></section>${profileRoles}${admin}${viewedRoleManager}${ownerClaim}
+        <section class="account-panel account-panel-wide"><h2>Installed games</h2><div class="tag-list">${installed}</div></section>${profileRoles}${security}${admin}${viewedRoleManager}${ownerClaim}
       </div>${isOwn ? `<p class="account-footnote">Your profile is saved by the Solaris server. Real name and profile details are optional.</p>${dangerZone()}${dangerDialog()}` : ''}</div>`;
   }
   function profileEditor(user) {
@@ -529,14 +638,17 @@
   }
   function authView(mode = 'signup', error = '') {
     const signupSelected = mode !== 'login';
+    const firebaseReady = firebaseSetupKnown && firebaseEnabled;
+    const emailField = `<label>Email address<input name="email" type="email" required maxlength="254" autocomplete="email" placeholder="you@example.com"></label>`;
     return `<div class="wrap account-wrap"><div class="page-head"><h1>Solaris account</h1><p>Create a member profile or log in to manage your account.</p></div>
       <section class="auth-card"><div class="auth-tabs" role="tablist" aria-label="Account access"><button type="button" role="tab" data-auth-mode="signup" aria-selected="${signupSelected}">Sign up</button><button type="button" role="tab" data-auth-mode="login" aria-selected="${!signupSelected}">Log in</button></div>
       <p class="form-message" id="auth-message" role="status">${esc(error)}</p>
-      <form id="signup-form" class="form auth-form"${signupSelected ? '' : ' hidden'}><h2>Create your account</h2><label>Username<input name="username" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_.-]+( [A-Za-z0-9_.-]+)*" autocomplete="username" placeholder="3–24 characters; spaces allowed"></label>
+      <form id="signup-form" class="form auth-form"${signupSelected ? '' : ' hidden'}><h2>Create your account</h2>${firebaseReady ? emailField : ''}<label>Username<input name="username" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_.-]+( [A-Za-z0-9_.-]+)*" autocomplete="username" placeholder="3–24 characters; spaces allowed"></label>
       <label>Password<input name="password" type="password" required minlength="10" maxlength="200" autocomplete="new-password" placeholder="At least 10 characters"></label><label>Confirm password<input name="confirmPassword" type="password" required minlength="10" maxlength="200" autocomplete="new-password"></label><details class="owner-setup"><summary>Studio owner setup</summary><label>Owner setup code<input name="ownerSetupCode" type="password" maxlength="200" autocomplete="off"></label><small>Only the reserved studio owner should use this server setup code.</small></details><button class="btn btn-primary" type="submit">Create account</button></form>
-      <form id="login-form" class="form auth-form"${!signupSelected ? '' : ' hidden'}><h2>Welcome back</h2><label>Username<input name="username" required maxlength="24" autocomplete="username"></label><label>Password<input name="password" type="password" required maxlength="200" autocomplete="current-password"></label><button class="btn btn-primary" type="submit">Log in</button></form>
+      <form id="login-form" class="form auth-form"${!signupSelected ? '' : ' hidden'}><h2>Welcome back</h2>${firebaseReady ? emailField : '<label>Username<input name="username" required maxlength="24" autocomplete="username"></label>'}<label>Password<input name="password" type="password" required maxlength="200" autocomplete="current-password"></label>${firebaseReady ? '<button class="text-link auth-reset-link" type="button" data-reset-auth>Password forgotten? Send a reset email</button>' : ''}<button class="btn btn-primary" type="submit">Log in</button>${firebaseReady ? '<button class="btn btn-ghost guest-entry" type="button" data-legacy-login-toggle>Use an older Solaris username account</button>' : ''}</form>
+      ${firebaseReady ? '<div id="legacy-login-panel" hidden><form id="legacy-login-form" class="form auth-form"><h2>Older Solaris account</h2><label>Username<input name="username" required maxlength="24" autocomplete="username"></label><label>Password<input name="password" type="password" required maxlength="200" autocomplete="current-password"></label><button class="btn btn-primary" type="submit">Log in to existing account</button><button class="btn btn-ghost guest-entry" type="button" data-legacy-login-toggle>Back to email sign-in</button></form></div>' : ''}
       ${signupSelected ? '<button class="btn btn-ghost guest-entry" type="button" data-view-guest>View site as guest</button>' : ''}
-      <p class="auth-note">Email is not required. Use a unique password and keep it somewhere safe; password recovery is unavailable until the studio has an email service.</p></section></div>`;
+      <p class="auth-note">${firebaseReady ? 'A verified email is required. Firebase securely manages email verification and password recovery.' : 'Email verification and password recovery become available after Firebase is configured. Until then, existing username accounts continue to work.'}</p></section></div>`;
   }
   function showAccount() {
     const params = new URLSearchParams(location.search);
@@ -566,6 +678,8 @@
     const signup = mode === 'signup';
     $('#signup-form').hidden = !signup;
     $('#login-form').hidden = signup;
+    const legacyPanel = $('#legacy-login-panel');
+    if (legacyPanel) legacyPanel.hidden = true;
     $$('[data-auth-mode]').forEach(button => button.setAttribute('aria-selected',String(button.dataset.authMode === mode)));
     setMessage('#auth-message','',false);
   }
@@ -713,7 +827,11 @@
     discardCrop();
   }
   async function logout() {
-    try { await api('/api/logout','POST',{}); currentUser = null; leaveGuestMode(); editingProfile = false; closeProfile(); profilePreview(); if (page === 'account') showAccount(); toast('You are logged out.'); }
+    try {
+      await api('/api/logout','POST',{});
+      if (firebaseEnabled) { try { const client = await getFirebaseClient(); await client.sdk.signOut(client.auth); } catch (_) {} }
+      currentUser = null; leaveGuestMode(); editingProfile = false; closeProfile(); profilePreview(); if (page === 'account') showAccount(); toast('You are logged out.');
+    }
     catch (error) { toast(error.message); }
   }
   function projectDialog(id) {
@@ -728,12 +846,14 @@
   try { const theme = localStorage.getItem('solaris-theme'); if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-theme',theme); } catch (_) {}
   loadTeamMembers();
   loadMemberProfiles();
-  api('/api/me').then(result => {
+  Promise.all([api('/api/me'),loadFirebaseSettings()]).then(async ([result]) => {
     currentUser = result.user;
     if (currentUser) leaveGuestMode();
     profilePreview();
     if (page === 'account') showAccount();
     if (['shop','download','project'].includes(page)) renderPage();
+    try { await resumePendingFirebaseSignup(); }
+    catch (error) { if (page === 'account' && !currentUser) setMessage('#auth-message',error.message); }
   }).catch(error => {
     currentUser = null;
     profilePreview();
@@ -769,6 +889,9 @@
     const cropSave = event.target.closest('[data-crop-save]');
     const cropRatio = event.target.closest('[data-crop-ratio]');
     const cropRotate = event.target.closest('[data-crop-rotate]');
+    const legacyLoginToggle = event.target.closest('[data-legacy-login-toggle]');
+    const authPasswordReset = event.target.closest('[data-reset-auth]');
+    const profilePasswordReset = event.target.closest('[data-password-reset]');
     if (menuButton) { closeGlobalSearch(); const nav = $('#nav'), open = nav.classList.toggle('open'); menuButton.setAttribute('aria-expanded',String(open)); return; }
     if (globalSearchToggle) {
       const panel = $('[data-global-search-panel]');
@@ -888,6 +1011,9 @@
     if (closeButton) { $('#dlg').close(); return; }
     if (gameButton) { projectDialog(gameButton.dataset.game); return; }
     if (authMode) { toggleAuthMode(authMode.dataset.authMode); return; }
+    if (legacyLoginToggle) { const panel = $('#legacy-login-panel'); if (panel) { panel.hidden = !panel.hidden; $('#login-form').hidden = !panel.hidden; } return; }
+    if (authPasswordReset) { authPasswordReset.disabled = true; try { await sendFirebasePasswordReset($('#login-form [name="email"]')?.value.trim(),'#auth-message'); } catch (error) { setMessage('#auth-message',error.message); } finally { authPasswordReset.disabled = false; } return; }
+    if (profilePasswordReset) { profilePasswordReset.disabled = true; try { await sendFirebasePasswordReset(profilePasswordReset.dataset.resetEmail,'[data-security-message]'); } catch (error) { setMessage('[data-security-message]',error.message); } finally { profilePasswordReset.disabled = false; } return; }
     if (addSocial) { const box = $('#social-editor'); if (box) { box.insertAdjacentHTML('beforeend',socialRowsMarkup([{label:'',url:''}])); $('[name="social-label"]',box.lastElementChild)?.focus(); } return; }
     if (removeSocial) { const row = removeSocial.closest('.social-editor-row'); const editor = $('#social-editor'); if (editor.children.length === 1) { $$('input',row).forEach(input => input.value = ''); } else row.remove(); return; }
     if (!event.target.closest('.profile-options-wrap')) {
@@ -907,6 +1033,28 @@
       if (password !== data.get('confirmPassword')) { setMessage('#auth-message','The passwords do not match.'); return; }
       const submit = $('button[type="submit"]',form); submit.disabled = true;
       try {
+        if (firebaseEnabled) {
+          const email = String(data.get('email') || '').trim().toLowerCase();
+          const client = await getFirebaseClient();
+          let user = client.auth.currentUser;
+          if (!user || user.email?.toLowerCase() !== email) {
+            try { user = (await client.sdk.createUserWithEmailAndPassword(client.auth,email,password)).user; }
+            catch (error) {
+              if (error.code !== 'auth/email-already-in-use') throw error;
+              user = (await client.sdk.signInWithEmailAndPassword(client.auth,email,password)).user;
+            }
+          }
+          const pending = {username:data.get('username'),email};
+          try { localStorage.setItem('solaris-pending-signup',JSON.stringify(pending)); } catch (_) {}
+          await user.reload();
+          if (!user.emailVerified) {
+            await client.sdk.sendEmailVerification(user,{url:`${location.origin}/account.html?mode=login`});
+            setMessage('#auth-message','Check your email and verify your address. This page can finish creating your Solaris account after you return.',false);
+            return;
+          }
+          await finishFirebaseSignup({...pending,ownerSetupCode:data.get('ownerSetupCode')},password);
+          return;
+        }
         const result = await api('/api/signup','POST',{username:data.get('username'),ownerSetupCode:data.get('ownerSetupCode'),password,profile:{}});
         currentUser = result.user; leaveGuestMode(); editingProfile = false; profilePreview(); showAccount(); toast(result.message);
       } catch (error) { setMessage('#auth-message',error.message); }
@@ -914,8 +1062,46 @@
     } else if (event.target.id === 'login-form') {
       event.preventDefault();
       const form = event.target, data = new FormData(form), submit = $('button[type="submit"]',form); submit.disabled = true;
+      try {
+        if (firebaseEnabled) {
+          const client = await getFirebaseClient();
+          const credential = await client.sdk.signInWithEmailAndPassword(client.auth,String(data.get('email') || '').trim(),data.get('password'));
+          await finishFirebaseLogin(credential.user,data.get('password'));
+        } else {
+          const result = await api('/api/login','POST',{username:data.get('username'),password:data.get('password')}); currentUser = result.user; leaveGuestMode(); profilePreview(); showAccount(); toast(`Welcome back, ${currentUser.username}.`);
+        }
+      }
+      catch (error) { setMessage('#auth-message',error.message); }
+      finally { submit.disabled = false; }
+    } else if (event.target.id === 'legacy-login-form') {
+      event.preventDefault();
+      const form = event.target, data = new FormData(form), submit = $('button[type="submit"]',form); submit.disabled = true;
       try { const result = await api('/api/login','POST',{username:data.get('username'),password:data.get('password')}); currentUser = result.user; leaveGuestMode(); profilePreview(); showAccount(); toast(`Welcome back, ${currentUser.username}.`); }
       catch (error) { setMessage('#auth-message',error.message); }
+      finally { submit.disabled = false; }
+    } else if (event.target.id === 'link-email-form') {
+      event.preventDefault();
+      const form = event.target, data = new FormData(form), submit = $('button[type="submit"]',form), email = String(data.get('email') || '').trim().toLowerCase(), password = data.get('password');
+      submit.disabled = true;
+      try {
+        const client = await getFirebaseClient();
+        let user = client.auth.currentUser;
+        if (!user || user.email?.toLowerCase() !== email) {
+          try { user = (await client.sdk.createUserWithEmailAndPassword(client.auth,email,password)).user; }
+          catch (error) {
+            if (error.code !== 'auth/email-already-in-use') throw error;
+            user = (await client.sdk.signInWithEmailAndPassword(client.auth,email,password)).user;
+          }
+        } else await client.sdk.reauthenticateWithCredential(user,client.sdk.EmailAuthProvider.credential(email,password));
+        await user.reload();
+        if (!user.emailVerified) {
+          await client.sdk.sendEmailVerification(user,{url:`${location.origin}/account.html?mode=login`});
+          setMessage('#link-email-message','We sent a verification email. After verifying it, return to this profile and submit the same email and password again.',false);
+          return;
+        }
+        const result = await api('/api/auth/link','POST',{idToken:await user.getIdToken(true),password});
+        currentUser = result.user; profilePreview(); showAccount(); toast(result.message);
+      } catch (error) { setMessage('#link-email-message',error.message); }
       finally { submit.disabled = false; }
     } else if (event.target.id === 'profile-form') {
       event.preventDefault();
@@ -933,8 +1119,18 @@
       submit.disabled = true;
       try {
         const endpoint = action === 'pause' ? '/api/account/pause' : '/api/account/delete';
-        const result = await api(endpoint,'POST',{password:data.get('password'),confirmation:data.get('confirmation')});
+        const password = data.get('password');
+        let authProof = {};
+        if (currentUser?.emailVerified) {
+          const client = await getFirebaseClient();
+          const user = client.auth.currentUser;
+          if (!user || user.email?.toLowerCase() !== currentUser.authEmail?.toLowerCase()) throw new Error('Please sign in with your verified email again before changing account status.');
+          await client.sdk.reauthenticateWithCredential(user,client.sdk.EmailAuthProvider.credential(user.email,password));
+          authProof.idToken = await user.getIdToken(true);
+        }
+        const result = await api(endpoint,'POST',{password,confirmation:data.get('confirmation'),...authProof});
         $('#account-danger-dialog').close();
+        if (firebaseEnabled) { try { const client = await getFirebaseClient(); await client.sdk.signOut(client.auth); } catch (_) {} }
         currentUser = null; editingProfile = false; profilePreview();
         history.replaceState({},'',`${location.pathname}?mode=login`);
         app.innerHTML = authView('login',result.message);

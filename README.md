@@ -16,11 +16,45 @@ Game builds will be linked from their project pages. The Download page is for ex
 3. Run `npm start`.
 4. Open [http://localhost:4173](http://localhost:4173).
 
-The site serves its separate HTML pages with shared `styles.css` and `app.js` files. Accounts use salted scrypt password hashes and HTTP-only session cookies. PostgreSQL is used when `DATABASE_URL` is set; otherwise, the server writes to `data/accounts.json`.
+The site serves its separate HTML pages with shared `styles.css` and `app.js` files. Accounts use HTTP-only session cookies. PostgreSQL is used when `DATABASE_URL` is set; otherwise, the server writes to `data/accounts.json`.
 
-## Accounts and the Solaris Owner
+## Accounts and Firebase email setup
 
-Sign-up and login do not require email. Email verification and password reset are currently disabled because the site does not have an email service. Members should keep their password safe; password recovery is not available yet.
+Firebase Authentication handles email verification, email/password sign-in, and password reset after the Firebase project is configured. The website remains in its existing username/password mode until the Firebase web settings and server credentials are all present. In that setup mode, every new account must verify its email before its Solaris profile is created. Password reset emails are sent by Firebase; users sign in again with the new password afterward.
+
+### Create and configure the Firebase project
+
+1. Create a Firebase project in the [Firebase console](https://console.firebase.google.com/).
+2. In **Authentication → Sign-in method**, enable **Email/Password**.
+3. In **Authentication → Settings → Authorized domains**, add the Render hostname for the site (for example, `your-site.onrender.com`) and `localhost` for local development.
+4. In **Project settings → General**, register a Web app and copy its public web configuration values: API key, Auth domain, Project ID, and App ID. The storage bucket and messaging sender ID are optional for this site.
+5. In **Project settings → Service accounts**, generate a private key for the Firebase Admin SDK. Treat the downloaded JSON as a secret. Do not commit it, upload it to the repository, or paste it into chat.
+6. Add these variables to the Render web service’s **Environment** settings. Use the exact values from the Firebase Web app and service account. For the private key, paste the full PEM value; if Render requires a single line, preserve newlines as `\n`.
+
+| Render variable | Firebase value |
+| --- | --- |
+| `FIREBASE_PROJECT_ID` | Project ID (used by the web app and Admin SDK) |
+| `FIREBASE_WEB_API_KEY` | Web app API key |
+| `FIREBASE_AUTH_DOMAIN` | Web app Auth domain |
+| `FIREBASE_APP_ID` | Web app App ID |
+| `FIREBASE_MESSAGING_SENDER_ID` | Web app sender ID (optional) |
+| `FIREBASE_STORAGE_BUCKET` | Web app storage bucket (optional) |
+| `FIREBASE_CLIENT_EMAIL` | Service account `client_email` |
+| `FIREBASE_PRIVATE_KEY` | Service account `private_key` (secret) |
+
+7. In **Authentication → Templates**, review the email verification and password reset messages and sender details. Save the settings, then redeploy or restart the Render service. The website exposes only the Firebase Web app settings to browsers; the Admin private key stays in the Render environment.
+
+Firebase sends verification and password reset messages directly, so Solaris does not need a separate email server. For local testing, use the same environment variables and make sure `localhost` is an authorized Firebase domain.
+
+### Existing Solaris accounts
+
+Existing username accounts keep working after Firebase is configured. While signed in, open the profile’s **Email security** section, enter an email and a Firebase password, and choose **Connect email**. Verify the address, return to the profile, and submit the same email and password again. The existing Solaris profile, roles, tickets, and posts remain attached. After the connection, use the verified email and Firebase password to log in. If a password is reset, the updated password is synchronized after the next successful Firebase login.
+
+New sign-ups verify their email before the Solaris account is activated. Use the same browser when returning from the verification link so it can finish the pending profile setup. An Owner sign-up must enter the one-time Owner setup code again after verification if the form asks for it; setup codes are not stored in the browser.
+
+If the Firebase variables are missing or incomplete, the site stays in legacy username/password mode. In that mode, email verification and password recovery are unavailable until Firebase is configured.
+
+## The Solaris Owner
 
 To set up the Owner role, add these variables in the server’s hosting settings. Keep the setup code private and do not put it in source files.
 

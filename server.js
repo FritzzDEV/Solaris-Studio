@@ -16,7 +16,7 @@ const SESSION_MS = 30 * 24 * 60 * 60 * 1000;
 const PAUSE_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 const USERNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_BODY = 3 * 1024 * 1024;
-const STATIC_FILES = new Set(['index.html', 'list.html', 'members.html', 'games.html', 'project.html', 'artwork.html', 'updates.html', 'account.html', 'arts.html', 'groups.html', 'download.html', 'shop.html', 'assets/hollow-shift-icon.webp', 'assets/gamma-frost-banner.webp', 'assets/golden-spiral-sun-icon.png', 'styles.css', 'app.js']);
+const STATIC_FILES = new Set(['index.html', 'list.html', 'members.html', 'games.html', 'project.html', 'artwork.html', 'updates.html', 'account.html', 'arts.html', 'groups.html', 'download.html', 'shop.html', 'assets/hollow-shift-icon.webp', 'assets/gamma-frost-banner.webp', 'assets/golden-spiral-sun-icon.png', 'assets/namecard-ticket.png', 'assets/who-ticket.png', 'styles.css', 'app.js']);
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.webp': 'image/webp', '.png': 'image/png' };
 const PRIMARY_ROLES = {
   assistant: { label: 'Assistant', explanation: 'Supports studio coordination and helps keep Solaris projects moving.' },
@@ -31,6 +31,7 @@ const FRIEND_CARD_EFFECTS = new Set(['none', 'glow', 'lift', 'shine']);
 let accounts = [];
 let pausedAccounts = [];
 let pool = null;
+let firebaseAuth = null;
 const sessions = new Map();
 const attempts = new Map();
 let writeQueue = Promise.resolve();
@@ -68,6 +69,67 @@ function parseCookies(header = '') {
 function sessionHash(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
+function firebaseWebConfig() {
+  const projectId = text(process.env.FIREBASE_PROJECT_ID, 200);
+  const config = {
+    apiKey: text(process.env.FIREBASE_WEB_API_KEY, 300),
+    authDomain: text(process.env.FIREBASE_AUTH_DOMAIN, 300),
+    projectId,
+    appId: text(process.env.FIREBASE_APP_ID, 300),
+    storageBucket: text(process.env.FIREBASE_STORAGE_BUCKET, 300),
+    messagingSenderId: text(process.env.FIREBASE_MESSAGING_SENDER_ID, 100)
+  };
+  const adminReady = Boolean(process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY && projectId);
+  return { enabled: Boolean(adminReady && config.apiKey && config.authDomain && config.appId), config };
+}
+function getFirebaseAuth() {
+  const setup = firebaseWebConfig();
+  if (!setup.enabled) throw Object.assign(new Error('Firebase email sign-in has not been configured on the server yet.'), { status: 503 });
+  if (firebaseAuth) return firebaseAuth;
+  try {
+    const { cert, getApps, initializeApp } = require('firebase-admin/app');
+    const { getAuth } = require('firebase-admin/auth');
+    const app = getApps().find(item => item.name === 'solaris-firebase') || initializeApp({
+      credential: cert({
+        projectId: setup.config.projectId,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: String(process.env.FIREBASE_PRIVATE_KEY).replace(/\\n/g, '\n')
+      }),
+      projectId: setup.config.projectId
+    }, 'solaris-firebase');
+    firebaseAuth = getAuth(app);
+    return firebaseAuth;
+  } catch (error) {
+    console.error('FIREBASE ADMIN SETUP ERROR:', error);
+    throw Object.assign(new Error('Firebase server authentication could not be initialized. Check the Render environment settings and logs.'), { status: 503 });
+  }
+}
+async function verifyFirebaseToken(idToken) {
+  if (typeof idToken !== 'string' || idToken.length < 100 || idToken.length > 10000) throw Object.assign(new Error('Sign in with your verified email and try again.'), { status: 401 });
+  try {
+    const claims = await getFirebaseAuth().verifyIdToken(idToken, true);
+    if (!claims.email || claims.email_verified !== true) throw Object.assign(new Error('Verify your email address before continuing.'), { status: 403 });
+    return claims;
+  } catch (error) {
+    if (error.status) throw error;
+    console.error('FIREBASE TOKEN VERIFICATION ERROR:', error);
+    throw Object.assign(new Error('Firebase could not verify this sign-in. Please sign in again.'), { status: 401 });
+  }
+}
+async function updatePasswordMirror(account, password) {
+  if (typeof password !== 'string' || password.length < 10 || password.length > 200) throw Object.assign(new Error('Use a password between 10 and 200 characters.'), { status: 400 });
+  const salt = crypto.randomBytes(16).toString('hex');
+  const passwordHash = Buffer.from(await scrypt(password, salt, 64)).toString('hex');
+  account.salt = salt;
+  account.passwordHash = passwordHash;
+}
+async function confirmAccountActionPassword(account, input) {
+  if (!account.firebaseUid) return passwordMatches(account, input.password);
+  const claims = await verifyFirebaseToken(input.idToken);
+  if (claims.uid !== account.firebaseUid || Date.now() / 1000 - Number(claims.auth_time || 0) > 5 * 60) return false;
+  await updatePasswordMirror(account, input.password);
+  return true;
+}
 async function getAccount(req) {
   const token = parseCookies(req.headers.cookie).solaris_session;
   if (!token) return null;
@@ -92,7 +154,7 @@ function privateProfile(account) {
   const ownerUsername = text(process.env.SOLARIS_OWNER_USERNAME || 'Fritzz Xenon', 24);
   const ownerExists = accounts.some(item => item.role === 'owner') || pausedAccounts.some(item => item.account.role === 'owner');
   const canClaimOwner = Boolean(process.env.SOLARIS_OWNER_SETUP_TOKEN && !ownerExists && account.profile.username.toLowerCase() === ownerUsername.toLowerCase());
-  return { ...publicProfile(account), friendCard: cleanFriendCard(account.profile.friendCard), tickets: account.tickets || { namecard: 0, who: 0 }, canClaimOwner };
+  return { ...publicProfile(account), friendCard: cleanFriendCard(account.profile.friendCard), tickets: account.tickets || { namecard: 0, who: 0 }, canClaimOwner, authEmail: account.email || '', emailVerified: account.emailVerified === true };
 }
 function normalizeAccount(account) {
   let changed = false;
@@ -284,6 +346,10 @@ async function removeAccountSessions(accountId, req, res) {
 async function handleApi(req, res, pathname) {
   if (!checkOrigin(req)) return send(res, 403, { error: 'This request was not accepted.' });
   await restoreExpiredAccounts();
+  if (req.method === 'GET' && pathname === '/api/firebase-config') {
+    const setup = firebaseWebConfig();
+    return send(res, 200, setup);
+  }
   if (req.method === 'GET' && pathname === '/api/me') {
     const account = await getAccount(req);
     return send(res, 200, { user: account ? privateProfile(account) : null });
@@ -382,13 +448,42 @@ async function handleApi(req, res, pathname) {
     catch (error) { account.tickets[type] = previousCount; throw error; }
     return send(res, 200, { user: privateProfile(account), message: `${type === 'namecard' ? 'Namecard' : 'WHO?'} ticket added for free.` });
   }
+  if (req.method === 'POST' && pathname === '/api/auth/link') {
+    const account = await getAccount(req);
+    if (!account) return send(res, 401, { error: 'Log in to connect an email to this Solaris profile.' });
+    const input = await readBody(req);
+    const claims = await verifyFirebaseToken(input.idToken);
+    const otherAccount = accounts.find(item => item.id !== account.id && item.firebaseUid === claims.uid);
+    const otherPaused = pausedAccounts.find(item => item.account.id !== account.id && (item.account.firebaseUid === claims.uid || item.account.email?.toLowerCase() === String(claims.email).toLowerCase()));
+    if (otherAccount || otherPaused) return send(res, 409, { error: 'That verified email is already connected to another Solaris account.' });
+    if (account.firebaseUid && account.firebaseUid !== claims.uid) return send(res, 409, { error: 'This Solaris account is already connected to a different verified email.' });
+    const previous = { firebaseUid: account.firebaseUid, email: account.email, emailVerified: account.emailVerified, salt: account.salt, passwordHash: account.passwordHash };
+    try {
+      await updatePasswordMirror(account, input.password);
+      account.firebaseUid = claims.uid;
+      account.email = String(claims.email).toLowerCase();
+      account.emailVerified = true;
+      await saveAccounts();
+    } catch (error) {
+      Object.assign(account, previous);
+      throw error;
+    }
+    return send(res, 200, { user: privateProfile(account), message: 'Your verified email is connected to this Solaris account.' });
+  }
   if (req.method === 'POST' && pathname === '/api/signup') {
     if (!allowAttempt(req)) return send(res, 429, { error: 'Too many sign-up attempts. Please try again later.' });
     const input = await readBody(req);
+    const firebaseEnabled = firebaseWebConfig().enabled;
+    let claims = null;
+    if (firebaseEnabled) {
+      if (!input.idToken) return send(res, 403, { error: 'Create a verified Firebase email account before signing up to Solaris.' });
+      claims = await verifyFirebaseToken(input.idToken);
+    }
+    else if (input.idToken) return send(res, 503, { error: 'Firebase email sign-in is not fully configured on the server.' });
     const username = text(input.username, 24);
     if (!validUsername(username)) return send(res, 400, { error: 'Use 3–24 letters, numbers, dots, dashes, underscores, or single spaces.' });
     if (accounts.some(account => account.profile.username.toLowerCase() === username.toLowerCase()) || pausedAccounts.some(item => item.account.profile.username.toLowerCase() === username.toLowerCase())) return send(res, 409, { error: 'That username is already taken or temporarily reserved by a paused account.' });
-    if (typeof input.password !== 'string' || input.password.length < 10 || input.password.length > 200) return send(res, 400, { error: 'Use a password between 10 and 200 characters.' });
+    if ((!claims || input.password) && (typeof input.password !== 'string' || input.password.length < 10 || input.password.length > 200)) return send(res, 400, { error: 'Use a password between 10 and 200 characters.' });
     const ownerUsername = text(process.env.SOLARIS_OWNER_USERNAME || 'Fritzz Xenon', 24);
     const setupCode = String(input.ownerSetupCode || '');
     const ownerExists = accounts.some(account => account.role === 'owner') || pausedAccounts.some(item => item.account.role === 'owner');
@@ -400,9 +495,11 @@ async function handleApi(req, res, pathname) {
       claimOwner = true;
     }
     const salt = crypto.randomBytes(16).toString('hex');
-    const passwordHash = Buffer.from(await scrypt(input.password, salt, 64)).toString('hex');
+    const password = typeof input.password === 'string' && input.password.length >= 10 ? input.password : crypto.randomBytes(48).toString('base64url');
+    const passwordHash = Buffer.from(await scrypt(password, salt, 64)).toString('hex');
     const id = crypto.randomUUID();
-    const account = { id, salt, passwordHash, role: claimOwner ? 'owner' : 'member', tickets: { namecard: 0, who: 0 },
+    if (claims && (accounts.some(item => item.firebaseUid === claims.uid) || pausedAccounts.some(item => item.account.firebaseUid === claims.uid || item.account.email?.toLowerCase() === String(claims.email).toLowerCase()))) return send(res, 409, { error: 'This verified email already has a Solaris account. Log in instead.' });
+    const account = { id, salt, passwordHash, ...(claims ? { firebaseUid: claims.uid, email: String(claims.email).toLowerCase(), emailVerified: true } : {}), role: claimOwner ? 'owner' : 'member', tickets: { namecard: 0, who: 0 },
       profile: cleanProfile({ ...input.profile, username }) };
     accounts.push(account);
     try { await saveAccounts(); }
@@ -413,6 +510,27 @@ async function handleApi(req, res, pathname) {
   if (req.method === 'POST' && pathname === '/api/login') {
     if (!allowAttempt(req)) return send(res, 429, { error: 'Too many login attempts. Please try again later.' });
     const input = await readBody(req);
+    if (input.idToken) {
+      const claims = await verifyFirebaseToken(input.idToken);
+      const account = accounts.find(item => item.firebaseUid === claims.uid);
+      if (!account) {
+        const paused = pausedAccounts.find(item => item.account.firebaseUid === claims.uid || item.account.email?.toLowerCase() === String(claims.email).toLowerCase());
+        if (paused) return send(res, 403, { error: `This account is paused until ${new Date(paused.resumeAt).toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' })} UTC.` });
+        return send(res, 404, { error: 'This verified email has no Solaris profile yet. Create an account or connect it from your existing profile.' });
+      }
+      const previous = { salt: account.salt, passwordHash: account.passwordHash, email: account.email, emailVerified: account.emailVerified };
+      try {
+        await updatePasswordMirror(account, input.password);
+        account.email = String(claims.email).toLowerCase();
+        account.emailVerified = true;
+        await saveAccounts();
+      } catch (error) {
+        Object.assign(account, previous);
+        throw error;
+      }
+      await setSession(res, account.id);
+      return send(res, 200, { user: privateProfile(account) });
+    }
     const username = text(input.username, 24).toLowerCase();
     const account = accounts.find(item => item.profile.username.toLowerCase() === username);
     const salt = account ? account.salt : '00000000000000000000000000000000';
@@ -423,6 +541,7 @@ async function handleApi(req, res, pathname) {
       if (paused && await passwordMatches(paused.account, input.password)) return send(res, 403, { error: `This account is paused until ${new Date(paused.resumeAt).toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' })} UTC.` });
     }
     if (!account || candidate.length !== expected.length || !crypto.timingSafeEqual(candidate, expected)) return send(res, 401, { error: 'The username or password is incorrect.' });
+    if (account.firebaseUid) return send(res, 403, { error: 'This account uses its verified email now. Log in with email and password.' });
     await setSession(res, account.id);
     return send(res, 200, { user: privateProfile(account) });
   }
@@ -462,7 +581,7 @@ async function handleApi(req, res, pathname) {
     if (!account) return send(res, 401, { error: 'Please log in to pause your account.' });
     const input = await readBody(req);
     if (input.confirmation !== 'PAUSE') return send(res, 400, { error: 'Type PAUSE exactly to confirm this action.' });
-    if (!await passwordMatches(account, input.password)) return send(res, 401, { error: 'Your password is incorrect.' });
+    if (!await confirmAccountActionPassword(account, input)) return send(res, 401, { error: 'Re-enter your current password and try again.' });
     const now = Date.now();
     const backup = JSON.parse(JSON.stringify(account));
     const previousAccounts = accounts;
@@ -485,7 +604,7 @@ async function handleApi(req, res, pathname) {
     if (!account) return send(res, 401, { error: 'Please log in to delete your account.' });
     const input = await readBody(req);
     if (input.confirmation !== 'DELETE') return send(res, 400, { error: 'Type DELETE exactly to confirm permanent deletion.' });
-    if (!await passwordMatches(account, input.password)) return send(res, 401, { error: 'Your password is incorrect.' });
+    if (!await confirmAccountActionPassword(account, input)) return send(res, 401, { error: 'Re-enter your current password and try again.' });
     const previousAccounts = accounts;
     const previousPaused = pausedAccounts;
     accounts = accounts.filter(item => item.id !== account.id);
